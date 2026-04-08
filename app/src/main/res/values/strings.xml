@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Pocket Waves</string>
+    <string name="permission_denied"> Permission Denied! \n Please grant permission to access storage.</string>
+</resources>
