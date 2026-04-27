@@ -69,7 +69,6 @@ class MainActivity : AppCompatActivity() {
         // It calls setDecorFitsSystemWindows(false) AND sets up correct status-bar
         // / nav-bar colors for all Android versions including 15+.
         enableEdgeToEdge()
-        
         setContentView(R.layout.activity_main)
         instance = WeakReference(this)
         playingCardView = findViewById(R.id.Playing_Song_Cardview)
