@@ -120,6 +120,7 @@ class MainActivity : AppCompatActivity() {
             showPermissionRationaleAndRequest()
         }
 
+
         // Playback controls
         findViewById<Button>(R.id.pauseResumeButton).setOnClickListener { togglePlaybackSafe() }
         findViewById<Button>(R.id.previousButton).setOnClickListener { playPreviousSong() }
