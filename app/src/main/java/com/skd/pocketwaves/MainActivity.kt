@@ -42,10 +42,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.google.android.material.tabs.TabLayout
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import java.lang.ref.WeakReference
 import retrofit2.Call
 import retrofit2.Callback
@@ -77,15 +73,7 @@ class MainActivity : AppCompatActivity() {
     private var isPlayingOnline = false
     private var isOnlineTabSelected = false
     private var searchDebounceRunnable: Runnable? = null
-
-    private lateinit var youtubePlayerView: YouTubePlayerView
-    private var youTubePlayer: YouTubePlayer? = null
-    private var isPlayingYoutube = false
-    private var isYoutubePlaying = false
     private var currentPlayingSong: Song? = null
-    // Set when playSong() is called for a YouTube track before the player has
-    // finished its internal startup; loaded as soon as onReady() fires.
-    private var pendingYoutubeLoad: Pair<String, Float>? = null
 
     private lateinit var notificationManager: NotificationManagerCompat
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -175,52 +163,6 @@ class MainActivity : AppCompatActivity() {
 
         seekBar = findViewById(R.id.seekBar)
         setupSeekBarListener()
-
-        youtubePlayerView = findViewById(R.id.youtubePlayerView)
-        lifecycle.addObserver(youtubePlayerView)
-        youtubePlayerView.addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
-            override fun onReady(youTubePlayer: YouTubePlayer) {
-                this@MainActivity.youTubePlayer = youTubePlayer
-                pendingYoutubeLoad?.let { (videoId, startSeconds) ->
-                    youTubePlayer.loadVideo(videoId, startSeconds)
-                    pendingYoutubeLoad = null
-                }
-            }
-
-            override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
-                if (!isPlayingYoutube) return
-                when (state) {
-                    PlayerConstants.PlayerState.PLAYING -> {
-                        isYoutubePlaying = true
-                        findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.pause)
-                        currentPlayingSong?.let { showNotification(it, true) }
-                    }
-                    PlayerConstants.PlayerState.PAUSED -> {
-                        isYoutubePlaying = false
-                        findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.play)
-                        currentPlayingSong?.let { showNotification(it, false) }
-                    }
-                    PlayerConstants.PlayerState.ENDED -> {
-                        isYoutubePlaying = false
-                        playNextSong()
-                    }
-                    else -> {}
-                }
-            }
-
-            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-                if (!isPlayingYoutube) return
-                val posMs = (second * 1000).toInt()
-                seekBar.progress = posMs
-                findViewById<TextView>(R.id.positive_playback_timer).text = formatTime(posMs)
-                findViewById<TextView>(R.id.negative_playback_timer).text =
-                    "-${formatTime((seekBar.max - posMs).coerceAtLeast(0))}"
-            }
-
-            override fun onVideoDuration(youTubePlayer: YouTubePlayer, duration: Float) {
-                seekBar.max = (duration * 1000).toInt()
-            }
-        })
 
         mediaPlayer = MediaPlayer().apply {
             setOnPreparedListener {
@@ -402,20 +344,13 @@ class MainActivity : AppCompatActivity() {
         val heading = findViewById<TextView>(R.id.heading)
 
         if (isPlaylistVisible) {
-            if (isPlayingYoutube) {
-                youtubePlayerView.visibility = View.VISIBLE
-                playingCardView.visibility = View.GONE
-            } else {
-                playingCardView.visibility = View.VISIBLE
-                youtubePlayerView.visibility = View.GONE
-            }
+            playingCardView.visibility = View.VISIBLE
             listContainer.visibility = View.GONE
             playlistButton.setBackgroundResource(R.drawable.playlist)
             heading.text = "Now Playing"
-            visualizerView.visibility = if (currentSongIndex != -1 && !isPlayingYoutube) View.VISIBLE else View.GONE
+            visualizerView.visibility = if (currentSongIndex != -1) View.VISIBLE else View.GONE
         } else {
             playingCardView.visibility = View.GONE
-            youtubePlayerView.visibility = View.GONE
             listContainer.visibility = View.VISIBLE
             playlistButton.setBackgroundResource(R.drawable.playing_button)
             heading.text = listHeading
@@ -440,7 +375,6 @@ class MainActivity : AppCompatActivity() {
         val heading = findViewById<TextView>(R.id.heading)
 
         playingCardView.visibility = View.GONE
-        youtubePlayerView.visibility = View.GONE
         visualizerView.visibility = View.GONE
         isPlaylistVisible = true
 
@@ -464,35 +398,12 @@ class MainActivity : AppCompatActivity() {
         onlineEmptyStateContainer.visibility = View.GONE
         onlineRecyclerView.visibility = View.GONE
 
-        // Jamendo (independent/CC full tracks) and YouTube (covers mainstream/
-        // commercial songs Jamendo can't legally offer) are searched in parallel
-        // and merged, YouTube first since it has far broader coverage.
-        var youtubeResult: List<Song>? = null
-        var jamendoResult: List<Song>? = null
-        var youtubeError: String? = null
-        var jamendoError: String? = null
-
-        fun tryFinish() {
-            val yt = youtubeResult ?: return
-            val jm = jamendoResult ?: return
-            val combined = yt + jm
-            when {
-                combined.isNotEmpty() -> showOnlineResults(combined, query)
-                youtubeError != null -> showOnlineError(youtubeError!!)
-                jamendoError != null -> showOnlineError(jamendoError!!)
-                else -> showOnlineResults(emptyList(), query)
-            }
-        }
-
-        fetchYoutubeTracks(query) { tracks, error ->
-            youtubeResult = tracks ?: emptyList()
-            youtubeError = error
-            tryFinish()
-        }
         fetchJamendoCombined(query) { tracks, error ->
-            jamendoResult = tracks
-            jamendoError = error
-            tryFinish()
+            if (error != null && tracks.isEmpty()) {
+                showOnlineError(error)
+            } else {
+                showOnlineResults(tracks, query)
+            }
         }
     }
 
@@ -533,34 +444,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun fetchYoutubeTracks(query: String, callback: (List<Song>?, String?) -> Unit) {
-        val apiKey = BuildConfig.YOUTUBE_API_KEY
-        if (apiKey.isBlank()) {
-            callback(emptyList(), null) // not configured — skip silently, Jamendo still works
-            return
-        }
-        YoutubeClient.api.searchVideos(apiKey, query)
-            .enqueue(object : Callback<YoutubeSearchResponse> {
-                override fun onResponse(
-                    call: Call<YoutubeSearchResponse>,
-                    response: Response<YoutubeSearchResponse>
-                ) {
-                    if (isFinishing || isDestroyed) return
-                    if (!response.isSuccessful) {
-                        callback(null, "YouTube search failed (HTTP ${response.code()}). Check your API key/quota.")
-                        return
-                    }
-                    val songs = response.body()?.items.orEmpty().mapNotNull { it.toSong() }
-                    callback(songs, null)
-                }
-
-                override fun onFailure(call: Call<YoutubeSearchResponse>, t: Throwable) {
-                    if (isFinishing || isDestroyed) return
-                    callback(null, "Couldn't reach YouTube. Check your connection.")
-                }
-            })
     }
 
     private fun fetchJamendoTracks(term: String, callback: (List<Song>?, String?) -> Unit) {
@@ -732,7 +615,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 else -> {
                     currentSongIndex = -1
-                    if (isPlayingYoutube) youTubePlayer?.pause() else mediaPlayer.stop()
+                    mediaPlayer.stop()
                     findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.play)
                 }
             }
@@ -798,7 +681,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             currentPlayingSong = song
-            isPlayingYoutube = song.isYoutube
 
             titleView.text = song.title
             titleView.isSelected = true  // enables marquee scrolling
@@ -808,60 +690,40 @@ class MainActivity : AppCompatActivity() {
             }
             artistView.text = song.artist
 
-            if (song.isYoutube) {
-                mediaPlayer.reset() // stop any local/Jamendo audio playback
-                youtubePlayerView.visibility = View.VISIBLE
-                playingCardView.visibility = View.GONE
-                visualizerView.visibility = View.GONE // no audio-session access into the YouTube engine
-                val player = youTubePlayer
-                if (player != null) {
-                    player.loadVideo(song.youtubeVideoId, 0f)
-                } else {
-                    // Player hasn't finished starting up yet — queue it, onReady() picks it up.
-                    pendingYoutubeLoad = song.youtubeVideoId to 0f
-                }
-                pauseBtn.setBackgroundResource(R.drawable.pause)
+            if (song.isOnline) {
+                Glide.with(this@MainActivity)
+                    .load(song.albumArtUri)
+                    .placeholder(R.drawable.audioicon)
+                    .error(R.drawable.audioicon)
+                    .into(albumImageView)
             } else {
-                youTubePlayer?.pause() // stop any previously loaded YouTube video
-                pendingYoutubeLoad = null
-                youtubePlayerView.visibility = View.GONE
-                playingCardView.visibility = View.VISIBLE
-
-                if (song.isOnline) {
-                    Glide.with(this@MainActivity)
-                        .load(song.albumArtUri)
-                        .placeholder(R.drawable.audioicon)
-                        .error(R.drawable.audioicon)
-                        .into(albumImageView)
-                } else {
-                    albumImageView.setImageURI(Uri.parse(song.albumArtUri))
-                    if (albumImageView.drawable == null) {
-                        albumImageView.setImageResource(R.drawable.audioicon)
-                    }
+                albumImageView.setImageURI(Uri.parse(song.albumArtUri))
+                if (albumImageView.drawable == null) {
+                    albumImageView.setImageResource(R.drawable.audioicon)
                 }
-
-                mediaPlayer.reset()
-                if (song.isOnline) {
-                    mediaPlayer.setDataSource(song.streamUrl)
-                } else {
-                    val songUri = ContentUris.withAppendedId(
-                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.id
-                    )
-                    mediaPlayer.setDataSource(applicationContext, songUri)
-                }
-                mediaPlayer.prepareAsync()
-
-                mediaPlayer.setOnPreparedListener {
-                    it.start()
-                    seekBar.max = it.duration
-                    updateSeekBar()
-                    setupVisualizer()
-                    pauseBtn.setBackgroundResource(R.drawable.pause)
-                }
-
-                mediaPlayer.setOnCompletionListener { playNextSong() }
-                visualizerView.visibility = View.VISIBLE
             }
+
+            mediaPlayer.reset()
+            if (song.isOnline) {
+                mediaPlayer.setDataSource(song.streamUrl)
+            } else {
+                val songUri = ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.id
+                )
+                mediaPlayer.setDataSource(applicationContext, songUri)
+            }
+            mediaPlayer.prepareAsync()
+
+            mediaPlayer.setOnPreparedListener {
+                it.start()
+                seekBar.max = it.duration
+                updateSeekBar()
+                setupVisualizer()
+                pauseBtn.setBackgroundResource(R.drawable.pause)
+            }
+
+            mediaPlayer.setOnCompletionListener { playNextSong() }
+            visualizerView.visibility = View.VISIBLE
 
             showNotification(song, true)
             if (index != -1) {
@@ -889,12 +751,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun togglePlayback() {
-        if (isPlayingYoutube) {
-            // Icon + notification update via the onStateChange listener once the
-            // player actually transitions, since that's the source of truth.
-            if (isYoutubePlaying) youTubePlayer?.pause() else youTubePlayer?.play()
-            return
-        }
         val pauseBtn = findViewById<Button>(R.id.pauseResumeButton)
         if (mediaPlayer.isPlaying) {
             mediaPlayer.pause()
@@ -924,9 +780,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupSeekBarListener() {
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                if (isPlayingYoutube) youTubePlayer?.seekTo(progress / 1000f)
-                else mediaPlayer.seekTo(progress)
+                if (fromUser) mediaPlayer.seekTo(progress)
             }
             override fun onStartTrackingTouch(sb: SeekBar?) { isUserSeeking = true }
             override fun onStopTrackingTouch(sb: SeekBar?) { isUserSeeking = false }

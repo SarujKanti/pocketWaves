@@ -12,7 +12,6 @@ val localProperties = Properties().apply {
     }
 }
 val jamendoClientId: String = localProperties.getProperty("JAMENDO_CLIENT_ID", "")
-val youtubeApiKey: String = localProperties.getProperty("YOUTUBE_API_KEY", "")
 
 android {
     namespace = "com.skd.pocketwaves"
@@ -27,7 +26,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "JAMENDO_CLIENT_ID", "\"$jamendoClientId\"")
-        buildConfigField("String", "YOUTUBE_API_KEY", "\"$youtubeApiKey\"")
     }
 
     buildTypes {
@@ -68,5 +66,4 @@ dependencies {
     implementation("androidx.media:media:1.4.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
-    implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:12.1.2")
 }
