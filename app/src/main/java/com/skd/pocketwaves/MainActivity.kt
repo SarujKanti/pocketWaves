@@ -175,6 +175,12 @@ class MainActivity : AppCompatActivity() {
 
         youtubePlayerView = findViewById(R.id.youtubePlayerView)
         lifecycle.addObserver(youtubePlayerView)
+        // Kept at 1x1dp and always attached so it plays like audio-only rather than
+        // showing YouTube's video. enableBackgroundPlayback() stops the library from
+        // auto-pausing when the Activity is backgrounded. Both are explicitly against
+        // YouTube's terms of service (they require the player to stay visible) —
+        // accepted knowingly for this non-Play-Store app.
+        youtubePlayerView.enableBackgroundPlayback(true)
         youtubePlayerView.addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
             override fun onReady(youTubePlayer: YouTubePlayer) {
                 this@MainActivity.youTubePlayer = youTubePlayer
@@ -395,20 +401,13 @@ class MainActivity : AppCompatActivity() {
         val heading = findViewById<TextView>(R.id.heading)
 
         if (isPlaylistVisible) {
-            if (isPlayingYoutube) {
-                youtubePlayerView.visibility = View.VISIBLE
-                playingCardView.visibility = View.GONE
-            } else {
-                playingCardView.visibility = View.VISIBLE
-                youtubePlayerView.visibility = View.GONE
-            }
+            playingCardView.visibility = View.VISIBLE
             listContainer.visibility = View.GONE
             playlistButton.setBackgroundResource(R.drawable.playlist)
             heading.text = "Now Playing"
             visualizerView.visibility = if (currentSongIndex != -1 && !isPlayingYoutube) View.VISIBLE else View.GONE
         } else {
             playingCardView.visibility = View.GONE
-            youtubePlayerView.visibility = View.GONE
             listContainer.visibility = View.VISIBLE
             playlistButton.setBackgroundResource(R.drawable.playing_button)
             heading.text = listHeading
@@ -433,7 +432,6 @@ class MainActivity : AppCompatActivity() {
         val heading = findViewById<TextView>(R.id.heading)
 
         playingCardView.visibility = View.GONE
-        youtubePlayerView.visibility = View.GONE
         visualizerView.visibility = View.GONE
         isPlaylistVisible = true
 
@@ -801,17 +799,28 @@ class MainActivity : AppCompatActivity() {
             }
             artistView.text = song.artist
 
+            // Album art: same album-art card is used for every source, including
+            // YouTube tracks (its video thumbnail), since playback there is audio-only.
+            if (song.isOnline) {
+                Glide.with(this@MainActivity)
+                    .load(song.albumArtUri)
+                    .placeholder(R.drawable.audioicon)
+                    .error(R.drawable.audioicon)
+                    .into(albumImageView)
+            } else {
+                albumImageView.setImageURI(Uri.parse(song.albumArtUri))
+                if (albumImageView.drawable == null) {
+                    albumImageView.setImageResource(R.drawable.audioicon)
+                }
+            }
+
             if (song.isYoutube) {
                 mediaPlayer.reset() // stop any local/Jamendo audio playback
-                youtubePlayerView.visibility = View.VISIBLE
-                playingCardView.visibility = View.GONE
-                visualizerView.visibility = View.GONE
                 youTubePlayer?.loadVideo(song.youtubeVideoId, 0f)
                 pauseBtn.setBackgroundResource(R.drawable.pause)
+                visualizerView.visibility = View.GONE // no audio-session access into the YouTube engine
             } else {
                 youTubePlayer?.pause() // stop any previously loaded YouTube video
-                youtubePlayerView.visibility = View.GONE
-                playingCardView.visibility = View.VISIBLE
 
                 mediaPlayer.reset()
                 if (song.isOnline) {
@@ -829,20 +838,7 @@ class MainActivity : AppCompatActivity() {
                     seekBar.max = it.duration
                     updateSeekBar()
                     setupVisualizer()
-
                     pauseBtn.setBackgroundResource(R.drawable.pause)
-                    if (song.isOnline) {
-                        Glide.with(this@MainActivity)
-                            .load(song.albumArtUri)
-                            .placeholder(R.drawable.audioicon)
-                            .error(R.drawable.audioicon)
-                            .into(albumImageView)
-                    } else {
-                        albumImageView.setImageURI(Uri.parse(song.albumArtUri))
-                        if (albumImageView.drawable == null) {
-                            albumImageView.setImageResource(R.drawable.audioicon)
-                        }
-                    }
                 }
 
                 mediaPlayer.setOnCompletionListener { playNextSong() }
@@ -854,6 +850,7 @@ class MainActivity : AppCompatActivity() {
                 if (song.isOnline) onlineRecyclerView.smoothScrollToPosition(index)
                 else recyclerView.smoothScrollToPosition(index)
             }
+            playingCardView.visibility = View.VISIBLE
             recyclerView.visibility = View.GONE
             onlineContainer.visibility = View.GONE
             heading.text = "Now Playing"
