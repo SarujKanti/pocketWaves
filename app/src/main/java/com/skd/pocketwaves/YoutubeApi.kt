@@ -44,7 +44,10 @@ interface YoutubeApiService {
         @Query("type") type: String = "video",
         @Query("videoCategoryId") videoCategoryId: String = "10",
         @Query("videoEmbeddable") videoEmbeddable: String = "true",
-        @Query("maxResults") maxResults: Int = 15
+        @Query("maxResults") maxResults: Int = 15,
+        // Biases relevance ranking toward India without excluding other regions'
+        // results — helps regional-language (Hindi/Tamil/Telugu/etc.) songs surface.
+        @Query("regionCode") regionCode: String = "IN"
     ): Call<YoutubeSearchResponse>
 }
 

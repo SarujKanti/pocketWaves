@@ -75,6 +75,7 @@ class MainActivity : AppCompatActivity() {
     private var onlineResults: List<Song> = emptyList()
     private var isPlayingOnline = false
     private var isOnlineTabSelected = false
+    private var searchDebounceRunnable: Runnable? = null
 
     private lateinit var youtubePlayerView: YouTubePlayerView
     private var youTubePlayer: YouTubePlayer? = null
@@ -148,11 +149,23 @@ class MainActivity : AppCompatActivity() {
 
         onlineSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String): Boolean {
+                searchDebounceRunnable?.let { handler.removeCallbacks(it) }
                 if (query.isNotBlank()) searchOnlineTracks(query.trim())
                 onlineSearchView.clearFocus() // dismiss the keyboard so results/errors are visible
                 return true
             }
-            override fun onQueryTextChange(newText: String) = false
+            override fun onQueryTextChange(newText: String): Boolean {
+                searchDebounceRunnable?.let { handler.removeCallbacks(it) }
+                val trimmed = newText.trim()
+                if (trimmed.length < 2) {
+                    if (trimmed.isEmpty()) resetOnlineResults()
+                    return true
+                }
+                val runnable = Runnable { searchOnlineTracks(trimmed) }
+                searchDebounceRunnable = runnable
+                handler.postDelayed(runnable, SEARCH_DEBOUNCE_MS)
+                return true
+            }
         })
 
         seekBar = findViewById(R.id.seekBar)
@@ -592,6 +605,16 @@ class MainActivity : AppCompatActivity() {
         onlineRecyclerView.visibility = View.GONE
     }
 
+    // Clears search results back to the initial prompt when the search box is emptied.
+    private fun resetOnlineResults() {
+        onlineResults = emptyList()
+        onlineAdapter.submitList(emptyList())
+        onlineProgressBar.visibility = View.GONE
+        onlineEmptyText.text = "Search for songs to stream online"
+        onlineEmptyText.visibility = View.VISIBLE
+        onlineRecyclerView.visibility = View.GONE
+    }
+
     private fun setupVisualizer() {
         if (!::visualizerView.isInitialized) return
         when {
@@ -967,6 +990,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        handler.removeCallbacksAndMessages(null)
         mediaPlayer.release()
         notificationManager.cancel(NOTIFICATION_ID)
         visualizerView.releaseVisualizer()
@@ -1008,6 +1032,7 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_PREVIOUS = "com.skd.audioplayer.ACTION_PLAY_PREVIOUS"
         const val ACTION_NEXT    = "com.skd.audioplayer.ACTION_PLAY_NEXT"
         const val NOTIFICATION_ID = 1
+        private const val SEARCH_DEBOUNCE_MS = 450L
         var instance: WeakReference<MainActivity>? = null
     }
 }
