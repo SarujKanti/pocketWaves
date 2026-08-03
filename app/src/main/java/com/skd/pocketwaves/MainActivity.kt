@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.PorterDuff
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -21,6 +22,7 @@ import android.provider.MediaStore
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -109,6 +111,9 @@ class MainActivity : AppCompatActivity() {
         onlineRecyclerView = findViewById(R.id.onlineRecyclerView)
         onlineProgressBar = findViewById(R.id.onlineProgressBar)
         onlineEmptyText   = findViewById(R.id.onlineEmptyText)
+
+        styleSearchView(searchView)
+        styleSearchView(onlineSearchView)
         // Start the lifecycle service so onTaskRemoved() fires when user clears the app
         startService(Intent(this, AppLifecycleService::class.java))
 
@@ -144,6 +149,7 @@ class MainActivity : AppCompatActivity() {
         onlineSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String): Boolean {
                 if (query.isNotBlank()) searchOnlineTracks(query.trim())
+                onlineSearchView.clearFocus() // dismiss the keyboard so results/errors are visible
                 return true
             }
             override fun onQueryTextChange(newText: String) = false
@@ -317,6 +323,28 @@ class MainActivity : AppCompatActivity() {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+    }
+
+    // The framework SearchView renders its magnifier/close icons and input text in
+    // plain black by default, which clashes with the app's purple-accented theme.
+    // Its internal child IDs (search_mag_icon etc.) aren't part of the public SDK
+    // stubs on newer compileSdk versions, so restyle by walking the view tree instead.
+    private fun styleSearchView(sv: SearchView) {
+        fun styleRecursively(view: View) {
+            when (view) {
+                is EditText -> {
+                    view.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+                    view.setHintTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                }
+                is ImageView -> view.setColorFilter(
+                    ContextCompat.getColor(this, R.color.text_secondary), PorterDuff.Mode.SRC_IN
+                )
+                is android.view.ViewGroup -> {
+                    for (i in 0 until view.childCount) styleRecursively(view.getChildAt(i))
+                }
+            }
+        }
+        styleRecursively(sv)
     }
 
     private fun togglePlaybackSafe() {
