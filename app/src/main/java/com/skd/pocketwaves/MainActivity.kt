@@ -23,6 +23,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.SearchView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -37,7 +38,12 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.google.android.material.tabs.TabLayout
 import java.lang.ref.WeakReference
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
@@ -52,6 +58,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var controlPanel: LinearLayout
     private lateinit var searchCard: CardView
     private lateinit var searchView: SearchView
+
+    private lateinit var modeTabLayout: TabLayout
+    private lateinit var onlineContainer: LinearLayout
+    private lateinit var onlineSearchView: SearchView
+    private lateinit var onlineRecyclerView: RecyclerView
+    private lateinit var onlineProgressBar: ProgressBar
+    private lateinit var onlineEmptyText: TextView
+    private lateinit var onlineAdapter: SongsAdapter
+    private var onlineResults: List<Song> = emptyList()
+    private var isPlayingOnline = false
+    private var isOnlineTabSelected = false
 
     private lateinit var notificationManager: NotificationManagerCompat
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -75,6 +92,13 @@ class MainActivity : AppCompatActivity() {
         controlPanel    = findViewById(R.id.controlPanel)
         searchCard      = findViewById(R.id.searchCard)
         searchView      = findViewById(R.id.searchView)
+
+        modeTabLayout     = findViewById(R.id.modeTabLayout)
+        onlineContainer   = findViewById(R.id.onlineContainer)
+        onlineSearchView  = findViewById(R.id.onlineSearchView)
+        onlineRecyclerView = findViewById(R.id.onlineRecyclerView)
+        onlineProgressBar = findViewById(R.id.onlineProgressBar)
+        onlineEmptyText   = findViewById(R.id.onlineEmptyText)
         // Start the lifecycle service so onTaskRemoved() fires when user clears the app
         startService(Intent(this, AppLifecycleService::class.java))
 
@@ -92,6 +116,28 @@ class MainActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         songsAdapter = SongsAdapter(emptyList()) { song -> playSong(song) }
         recyclerView.adapter = songsAdapter
+
+        onlineRecyclerView.layoutManager = LinearLayoutManager(this)
+        onlineAdapter = SongsAdapter(emptyList()) { song ->
+            isPlayingOnline = true
+            currentSongIndex = onlineResults.indexOf(song)
+            playSong(song)
+        }
+        onlineRecyclerView.adapter = onlineAdapter
+
+        modeTabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = switchTab(tab.position == 1)
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
+
+        onlineSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String): Boolean {
+                if (query.isNotBlank()) searchOnlineTracks(query.trim())
+                return true
+            }
+            override fun onQueryTextChange(newText: String) = false
+        })
 
         seekBar = findViewById(R.id.seekBar)
         setupSeekBarListener()
@@ -128,33 +174,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.reapet_button).setOnClickListener { toggleRepeat() }
 
         val playlistButton = findViewById<Button>(R.id.playlist_button)
-        val heading = findViewById<TextView>(R.id.heading)
 
-        playlistButton.setOnClickListener {
-            // Always close search bar and keyboard before switching view
-            if (searchCard.visibility == View.VISIBLE) {
-                searchCard.visibility = View.GONE
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(searchView.windowToken, 0)
-            }
-
-            if (isPlaylistVisible) {
-                playingCardView.visibility = View.VISIBLE
-                recyclerView.visibility = View.GONE
-                playlistButton.setBackgroundResource(R.drawable.playlist)
-                heading.text = "Now Playing"
-                visualizerView.visibility = if (currentSongIndex != -1) View.VISIBLE else View.GONE
-                if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
-            } else {
-                playingCardView.visibility = View.GONE
-                recyclerView.visibility = View.VISIBLE
-                playlistButton.setBackgroundResource(R.drawable.playing_button)
-                heading.text = "All Songs"
-                visualizerView.visibility = View.GONE
-                if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
-            }
-            isPlaylistVisible = !isPlaylistVisible
-        }
+        playlistButton.setOnClickListener { togglePlaylistView() }
 
         val searchButton = findViewById<Button>(R.id.search_button)
 
@@ -248,7 +269,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun togglePlaybackSafe() {
         if (currentSongIndex == -1) {
-            if (songsAdapter.itemCount > 0) {
+            if (isOnlineTabSelected && onlineResults.isNotEmpty()) {
+                isPlayingOnline = true
+                currentSongIndex = 0
+                playSong(onlineResults[0])
+            } else if (!isOnlineTabSelected && songsAdapter.itemCount > 0) {
+                isPlayingOnline = false
                 currentSongIndex = 0
                 playSong(songsAdapter.getSongs()[0])
             } else {
@@ -257,6 +283,110 @@ class MainActivity : AppCompatActivity() {
             return
         }
         togglePlayback()
+    }
+
+    // Toggles between the current tab's song list and the "Now Playing" screen.
+    private fun togglePlaylistView() {
+        val listContainer: View = if (isOnlineTabSelected) onlineContainer else recyclerView
+        val listHeading = if (isOnlineTabSelected) "Online" else "All Songs"
+
+        if (searchCard.visibility == View.VISIBLE) {
+            searchCard.visibility = View.GONE
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(searchView.windowToken, 0)
+        }
+
+        val playlistButton = findViewById<Button>(R.id.playlist_button)
+        val heading = findViewById<TextView>(R.id.heading)
+
+        if (isPlaylistVisible) {
+            playingCardView.visibility = View.VISIBLE
+            listContainer.visibility = View.GONE
+            playlistButton.setBackgroundResource(R.drawable.playlist)
+            heading.text = "Now Playing"
+            visualizerView.visibility = if (currentSongIndex != -1) View.VISIBLE else View.GONE
+        } else {
+            playingCardView.visibility = View.GONE
+            listContainer.visibility = View.VISIBLE
+            playlistButton.setBackgroundResource(R.drawable.playing_button)
+            heading.text = listHeading
+            visualizerView.visibility = View.GONE
+        }
+        if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
+        isPlaylistVisible = !isPlaylistVisible
+    }
+
+    // Switches between the Offline (local library) and Online (Jamendo search) tabs.
+    private fun switchTab(online: Boolean) {
+        isOnlineTabSelected = online
+
+        if (searchCard.visibility == View.VISIBLE) {
+            searchCard.visibility = View.GONE
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(searchView.windowToken, 0)
+        }
+
+        val searchButton = findViewById<Button>(R.id.search_button)
+        val playlistButton = findViewById<Button>(R.id.playlist_button)
+        val heading = findViewById<TextView>(R.id.heading)
+
+        playingCardView.visibility = View.GONE
+        visualizerView.visibility = View.GONE
+        isPlaylistVisible = true
+
+        if (online) {
+            recyclerView.visibility = View.GONE
+            onlineContainer.visibility = View.VISIBLE
+            searchButton.visibility = View.GONE
+            heading.text = "Online"
+        } else {
+            onlineContainer.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
+            searchButton.visibility = View.VISIBLE
+            heading.text = "All Songs"
+        }
+        playlistButton.setBackgroundResource(R.drawable.playing_button)
+        if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
+    }
+
+    private fun searchOnlineTracks(query: String) {
+        onlineProgressBar.visibility = View.VISIBLE
+        onlineEmptyText.visibility = View.GONE
+        onlineRecyclerView.visibility = View.GONE
+
+        JamendoClient.api.searchTracks(BuildConfig.JAMENDO_CLIENT_ID, query)
+            .enqueue(object : Callback<JamendoSearchResponse> {
+                override fun onResponse(
+                    call: Call<JamendoSearchResponse>,
+                    response: Response<JamendoSearchResponse>
+                ) {
+                    if (isFinishing || isDestroyed) return
+                    onlineProgressBar.visibility = View.GONE
+
+                    if (!response.isSuccessful) {
+                        onlineEmptyText.text = "Search failed. Check your Jamendo API key."
+                        onlineEmptyText.visibility = View.VISIBLE
+                        return
+                    }
+
+                    val tracks = response.body()?.results.orEmpty().map { it.toSong() }
+                    onlineResults = tracks
+                    onlineAdapter.submitList(tracks)
+                    if (tracks.isEmpty()) {
+                        onlineEmptyText.text = "No results for \"$query\""
+                        onlineEmptyText.visibility = View.VISIBLE
+                    } else {
+                        onlineRecyclerView.visibility = View.VISIBLE
+                    }
+                }
+
+                override fun onFailure(call: Call<JamendoSearchResponse>, t: Throwable) {
+                    if (isFinishing || isDestroyed) return
+                    onlineProgressBar.visibility = View.GONE
+                    onlineEmptyText.text = "Couldn't reach Jamendo. Check your connection."
+                    onlineEmptyText.visibility = View.VISIBLE
+                }
+            })
     }
 
     private fun setupVisualizer() {
@@ -318,6 +448,7 @@ class MainActivity : AppCompatActivity() {
         }
         songsList.reverse()
         songsAdapter = SongsAdapter(songsList) { song ->
+            isPlayingOnline = false
             currentSongIndex = songsList.indexOf(song)
             playSong(song)
         }
@@ -329,6 +460,7 @@ class MainActivity : AppCompatActivity() {
         isShuffleOn = !isShuffleOn
         val btn = findViewById<Button>(R.id.shuffleButton)
         btn.setBackgroundResource(if (isShuffleOn) R.drawable.shuffle_on else R.drawable.shuffle_off)
+        if (isPlayingOnline) return
         if (isShuffleOn) songsAdapter.shuffleSongs() else loadSongs()
     }
 
@@ -348,6 +480,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun playNextSong() {
+        if (isPlayingOnline) {
+            if (onlineResults.isEmpty()) return
+            when {
+                isShuffleOn -> {
+                    currentSongIndex = onlineResults.indices.random()
+                    playSong(onlineResults[currentSongIndex])
+                }
+                isRepeatOneOn -> playSong(onlineResults[currentSongIndex])
+                currentSongIndex < onlineResults.size - 1 -> {
+                    playSong(onlineResults[++currentSongIndex])
+                }
+                isRepeatAllOn -> {
+                    currentSongIndex = 0
+                    playSong(onlineResults[currentSongIndex])
+                }
+                else -> {
+                    currentSongIndex = -1
+                    mediaPlayer.stop()
+                    findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.play)
+                }
+            }
+            return
+        }
         if (songsAdapter.itemCount == 0) return
         when {
             isShuffleOn -> {
@@ -371,6 +526,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun playPreviousSong() {
+        if (isPlayingOnline) {
+            if (onlineResults.isEmpty()) return
+            if (currentSongIndex - 1 >= 0) {
+                playSong(onlineResults[--currentSongIndex])
+            } else if (isRepeatAllOn) {
+                currentSongIndex = onlineResults.size - 1
+                playSong(onlineResults[currentSongIndex])
+            }
+            return
+        }
         if (songsAdapter.itemCount == 0) return
         if (currentSongIndex - 1 >= 0) {
             playSong(songsAdapter.getSongs()[--currentSongIndex])
@@ -388,18 +553,23 @@ class MainActivity : AppCompatActivity() {
         val playlistBtn = findViewById<Button>(R.id.playlist_button)
 
         try {
-            songsAdapter.getSongs().forEach { it.isPlaying = false }
-            val index = songsAdapter.getSongs().indexOf(song)
+            val activeAdapter = if (song.isOnline) onlineAdapter else songsAdapter
+            activeAdapter.getSongs().forEach { it.isPlaying = false }
+            val index = activeAdapter.getSongs().indexOf(song)
             if (index != -1) {
-                songsAdapter.getSongs()[index].isPlaying = true
-                songsAdapter.notifyDataSetChanged()
+                activeAdapter.getSongs()[index].isPlaying = true
+                activeAdapter.notifyDataSetChanged()
             }
 
             mediaPlayer.reset()
-            val songUri = ContentUris.withAppendedId(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.id
-            )
-            mediaPlayer.setDataSource(applicationContext, songUri)
+            if (song.isOnline) {
+                mediaPlayer.setDataSource(song.streamUrl)
+            } else {
+                val songUri = ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.id
+                )
+                mediaPlayer.setDataSource(applicationContext, songUri)
+            }
             mediaPlayer.prepareAsync()
 
             mediaPlayer.setOnPreparedListener {
@@ -411,12 +581,23 @@ class MainActivity : AppCompatActivity() {
                 val titleView = findViewById<TextView>(R.id.song_title)
                 titleView.text = song.title
                 titleView.isSelected = true  // enables marquee scrolling
-                titleView.setOnClickListener { recyclerView.smoothScrollToPosition(index) }
+                titleView.setOnClickListener {
+                    if (song.isOnline) onlineRecyclerView.smoothScrollToPosition(index)
+                    else recyclerView.smoothScrollToPosition(index)
+                }
 
                 pauseBtn.setBackgroundResource(R.drawable.pause)
-                albumImageView.setImageURI(Uri.parse(song.albumArtUri))
-                if (albumImageView.drawable == null) {
-                    albumImageView.setImageResource(R.drawable.audioicon)
+                if (song.isOnline) {
+                    Glide.with(this@MainActivity)
+                        .load(song.albumArtUri)
+                        .placeholder(R.drawable.audioicon)
+                        .error(R.drawable.audioicon)
+                        .into(albumImageView)
+                } else {
+                    albumImageView.setImageURI(Uri.parse(song.albumArtUri))
+                    if (albumImageView.drawable == null) {
+                        albumImageView.setImageResource(R.drawable.audioicon)
+                    }
                 }
                 artistView.text = song.artist
             }
@@ -424,10 +605,14 @@ class MainActivity : AppCompatActivity() {
             mediaPlayer.setOnCompletionListener { playNextSong() }
 
             showNotification(song, true)
-            if (index != -1) recyclerView.smoothScrollToPosition(index)
+            if (index != -1) {
+                if (song.isOnline) onlineRecyclerView.smoothScrollToPosition(index)
+                else recyclerView.smoothScrollToPosition(index)
+            }
             visualizerView.visibility = View.VISIBLE
             playingCardView.visibility = View.VISIBLE
             recyclerView.visibility = View.GONE
+            onlineContainer.visibility = View.GONE
             heading.text = "Now Playing"
             playlistBtn.setBackgroundResource(R.drawable.playlist)
             isPlaylistVisible = false   // keep flag in sync with actual UI state
@@ -459,7 +644,9 @@ class MainActivity : AppCompatActivity() {
         }
         // Update notification to reflect new play/pause state
         if (currentSongIndex != -1) {
-            showNotification(songsAdapter.getSongs()[currentSongIndex], mediaPlayer.isPlaying)
+            val song = if (isPlayingOnline) onlineResults[currentSongIndex]
+                else songsAdapter.getSongs()[currentSongIndex]
+            showNotification(song, mediaPlayer.isPlaying)
         }
     }
 
@@ -500,8 +687,10 @@ class MainActivity : AppCompatActivity() {
         ) return
 
         // Load album art bitmap (null → system uses small icon only)
+        // Online tracks use an http(s) album art URL, which contentResolver can't open directly.
         val albumBitmap = try {
-            contentResolver.openInputStream(Uri.parse(song.albumArtUri))?.use {
+            if (song.isOnline) null
+            else contentResolver.openInputStream(Uri.parse(song.albumArtUri))?.use {
                 BitmapFactory.decodeStream(it)
             }
         } catch (e: Exception) { null }

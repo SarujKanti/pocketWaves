@@ -6,5 +6,7 @@ data class Song(
     val artist: String,
     val path: String,
     val albumArtUri: String,
-    var isPlaying: Boolean = false
+    var isPlaying: Boolean = false,
+    val isOnline: Boolean = false,
+    val streamUrl: String = ""
 )
