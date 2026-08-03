@@ -15,7 +15,14 @@ data class JamendoTrack(
     val duration: Int
 )
 
+data class JamendoHeaders(
+    val status: String,
+    val code: Int,
+    val error_message: String
+)
+
 data class JamendoSearchResponse(
+    val headers: JamendoHeaders,
     val results: List<JamendoTrack>
 )
 

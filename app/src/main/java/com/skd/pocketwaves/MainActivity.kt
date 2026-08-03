@@ -354,39 +354,98 @@ class MainActivity : AppCompatActivity() {
         onlineEmptyText.visibility = View.GONE
         onlineRecyclerView.visibility = View.GONE
 
-        JamendoClient.api.searchTracks(BuildConfig.JAMENDO_CLIENT_ID, query)
+        fetchJamendoTracks(query) { tracks, error ->
+            if (error != null) {
+                showOnlineError(error)
+                return@fetchJamendoTracks
+            }
+            if (tracks!!.isNotEmpty()) {
+                showOnlineResults(tracks, query)
+                return@fetchJamendoTracks
+            }
+            // Nothing matched the full phrase — broaden to "any word" matching,
+            // since Jamendo's search is an AND across terms and won't match e.g.
+            // a query where only one word appears in the track/artist name.
+            val words = query.trim().split(Regex("\\s+")).filter { it.length >= 2 }.distinct()
+            if (words.size <= 1) {
+                showOnlineResults(emptyList(), query)
+            } else {
+                fetchMergedByWords(words, query)
+            }
+        }
+    }
+
+    // Searches each word separately and merges the union of matches (deduped by track id).
+    private fun fetchMergedByWords(words: List<String>, originalQuery: String) {
+        val merged = LinkedHashMap<Long, Song>()
+        var remaining = words.size
+        var lastError: String? = null
+
+        words.forEach { word ->
+            fetchJamendoTracks(word) { tracks, error ->
+                remaining--
+                if (error != null) lastError = error
+                tracks?.forEach { merged.putIfAbsent(it.id, it) }
+                if (remaining == 0) {
+                    if (merged.isEmpty() && lastError != null) {
+                        showOnlineError(lastError!!)
+                    } else {
+                        showOnlineResults(merged.values.toList(), originalQuery)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun fetchJamendoTracks(term: String, callback: (List<Song>?, String?) -> Unit) {
+        JamendoClient.api.searchTracks(BuildConfig.JAMENDO_CLIENT_ID, term)
             .enqueue(object : Callback<JamendoSearchResponse> {
                 override fun onResponse(
                     call: Call<JamendoSearchResponse>,
                     response: Response<JamendoSearchResponse>
                 ) {
                     if (isFinishing || isDestroyed) return
-                    onlineProgressBar.visibility = View.GONE
-
-                    if (!response.isSuccessful) {
-                        onlineEmptyText.text = "Search failed. Check your Jamendo API key."
-                        onlineEmptyText.visibility = View.VISIBLE
+                    val payload = response.body()
+                    if (!response.isSuccessful || payload == null) {
+                        callback(null, "Search failed (HTTP ${response.code()}).")
                         return
                     }
-
-                    val tracks = response.body()?.results.orEmpty().map { it.toSong() }
-                    onlineResults = tracks
-                    onlineAdapter.submitList(tracks)
-                    if (tracks.isEmpty()) {
-                        onlineEmptyText.text = "No results for \"$query\""
-                        onlineEmptyText.visibility = View.VISIBLE
-                    } else {
-                        onlineRecyclerView.visibility = View.VISIBLE
+                    if (payload.headers.status == "failed") {
+                        callback(
+                            null,
+                            "Jamendo: ${payload.headers.error_message}. Add a free client ID to local.properties (JAMENDO_CLIENT_ID)."
+                        )
+                        return
                     }
+                    callback(payload.results.map { it.toSong() }, null)
                 }
 
                 override fun onFailure(call: Call<JamendoSearchResponse>, t: Throwable) {
                     if (isFinishing || isDestroyed) return
-                    onlineProgressBar.visibility = View.GONE
-                    onlineEmptyText.text = "Couldn't reach Jamendo. Check your connection."
-                    onlineEmptyText.visibility = View.VISIBLE
+                    callback(null, "Couldn't reach Jamendo. Check your connection.")
                 }
             })
+    }
+
+    private fun showOnlineResults(tracks: List<Song>, query: String) {
+        onlineProgressBar.visibility = View.GONE
+        onlineResults = tracks
+        onlineAdapter.submitList(tracks)
+        if (tracks.isEmpty()) {
+            onlineEmptyText.text = "No results for \"$query\""
+            onlineEmptyText.visibility = View.VISIBLE
+            onlineRecyclerView.visibility = View.GONE
+        } else {
+            onlineEmptyText.visibility = View.GONE
+            onlineRecyclerView.visibility = View.VISIBLE
+        }
+    }
+
+    private fun showOnlineError(message: String) {
+        onlineProgressBar.visibility = View.GONE
+        onlineEmptyText.text = message
+        onlineEmptyText.visibility = View.VISIBLE
+        onlineRecyclerView.visibility = View.GONE
     }
 
     private fun setupVisualizer() {

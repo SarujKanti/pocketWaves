@@ -53,6 +53,7 @@ class SongsAdapter(
         private val titleTextView: TextView = itemView.findViewById(R.id.titleTextView)
         private val artistTextView: TextView = itemView.findViewById(R.id.artistTextView)
         private val albumImageView: ImageView = itemView.findViewById(R.id.albumImageView)
+        private val streamBadge: ImageView = itemView.findViewById(R.id.streamBadge)
 
         fun bind(song: Song) {
             titleTextView.text = song.title
@@ -64,6 +65,7 @@ class SongsAdapter(
             artistTextView.setTextColor(
                 ContextCompat.getColor(itemView.context, R.color.text_secondary)
             )
+            streamBadge.visibility = if (song.isOnline) View.VISIBLE else View.GONE
             Glide.with(itemView.context)
                 .load(song.albumArtUri)
                 .placeholder(R.drawable.audioicon)
