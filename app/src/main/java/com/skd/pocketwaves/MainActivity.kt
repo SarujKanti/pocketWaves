@@ -79,10 +79,14 @@ class MainActivity : AppCompatActivity() {
     private var searchDebounceRunnable: Runnable? = null
 
     private lateinit var youtubePlayerView: YouTubePlayerView
+    private lateinit var youtubeCoverView: View
     private var youTubePlayer: YouTubePlayer? = null
     private var isPlayingYoutube = false
     private var isYoutubePlaying = false
     private var currentPlayingSong: Song? = null
+    // Set when playSong() is called for a YouTube track before the player has
+    // finished its internal startup; loaded as soon as onReady() fires.
+    private var pendingYoutubeLoad: Pair<String, Float>? = null
 
     private lateinit var notificationManager: NotificationManagerCompat
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -174,6 +178,8 @@ class MainActivity : AppCompatActivity() {
         setupSeekBarListener()
 
         youtubePlayerView = findViewById(R.id.youtubePlayerView)
+        youtubeCoverView = findViewById(R.id.youtubeCoverView)
+        youtubeCoverView.visibility = View.GONE
         lifecycle.addObserver(youtubePlayerView)
         // Sits at real on-screen coordinates behind youtubeCoverView (an always-opaque
         // view with identical bounds) so it plays like audio-only instead of showing
@@ -186,6 +192,10 @@ class MainActivity : AppCompatActivity() {
         youtubePlayerView.addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
             override fun onReady(youTubePlayer: YouTubePlayer) {
                 this@MainActivity.youTubePlayer = youTubePlayer
+                pendingYoutubeLoad?.let { (videoId, startSeconds) ->
+                    youTubePlayer.loadVideo(videoId, startSeconds)
+                    pendingYoutubeLoad = null
+                }
             }
 
             override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
@@ -818,11 +828,20 @@ class MainActivity : AppCompatActivity() {
 
             if (song.isYoutube) {
                 mediaPlayer.reset() // stop any local/Jamendo audio playback
-                youTubePlayer?.loadVideo(song.youtubeVideoId, 0f)
+                youtubeCoverView.visibility = View.VISIBLE
+                val player = youTubePlayer
+                if (player != null) {
+                    player.loadVideo(song.youtubeVideoId, 0f)
+                } else {
+                    // Player hasn't finished starting up yet — queue it, onReady() picks it up.
+                    pendingYoutubeLoad = song.youtubeVideoId to 0f
+                }
                 pauseBtn.setBackgroundResource(R.drawable.pause)
                 visualizerView.visibility = View.GONE // no audio-session access into the YouTube engine
             } else {
                 youTubePlayer?.pause() // stop any previously loaded YouTube video
+                pendingYoutubeLoad = null
+                youtubeCoverView.visibility = View.GONE
 
                 mediaPlayer.reset()
                 if (song.isOnline) {
