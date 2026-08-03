@@ -175,13 +175,13 @@ class MainActivity : AppCompatActivity() {
 
         youtubePlayerView = findViewById(R.id.youtubePlayerView)
         lifecycle.addObserver(youtubePlayerView)
-        // Kept at a normal, functional size (WebViews can fail to load/render content
-        // in a near-zero-size view) but translated off-screen so it plays like
-        // audio-only instead of showing YouTube's video. enableBackgroundPlayback()
-        // stops the library from auto-pausing when the Activity is backgrounded. Both
-        // are explicitly against YouTube's terms of service (they require the player
-        // to stay visible) — accepted knowingly for this non-Play-Store app.
-        youtubePlayerView.translationY = -10000f
+        // Sits at real on-screen coordinates behind youtubeCoverView (an always-opaque
+        // view with identical bounds) so it plays like audio-only instead of showing
+        // YouTube's video, without the WebView being throttled the way a fully
+        // off-screen position caused. enableBackgroundPlayback() stops the library
+        // from auto-pausing when the Activity is backgrounded. Both are explicitly
+        // against YouTube's terms of service (they require the player to stay
+        // visible) — accepted knowingly for this non-Play-Store app.
         youtubePlayerView.enableBackgroundPlayback(true)
         youtubePlayerView.addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
             override fun onReady(youTubePlayer: YouTubePlayer) {
