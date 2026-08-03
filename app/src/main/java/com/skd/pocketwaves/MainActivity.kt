@@ -71,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var onlineRecyclerView: RecyclerView
     private lateinit var onlineProgressBar: ProgressBar
     private lateinit var onlineEmptyText: TextView
+    private lateinit var onlineEmptyStateContainer: View
     private lateinit var onlineAdapter: SongsAdapter
     private var onlineResults: List<Song> = emptyList()
     private var isPlayingOnline = false
@@ -112,6 +113,7 @@ class MainActivity : AppCompatActivity() {
         onlineRecyclerView = findViewById(R.id.onlineRecyclerView)
         onlineProgressBar = findViewById(R.id.onlineProgressBar)
         onlineEmptyText   = findViewById(R.id.onlineEmptyText)
+        onlineEmptyStateContainer = findViewById(R.id.onlineEmptyStateContainer)
 
         styleSearchView(searchView)
         styleSearchView(onlineSearchView)
@@ -452,7 +454,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun searchOnlineTracks(query: String) {
         onlineProgressBar.visibility = View.VISIBLE
-        onlineEmptyText.visibility = View.GONE
+        onlineEmptyStateContainer.visibility = View.GONE
         onlineRecyclerView.visibility = View.GONE
 
         // Jamendo (independent/CC full tracks) and YouTube (covers mainstream/
@@ -590,10 +592,10 @@ class MainActivity : AppCompatActivity() {
         onlineAdapter.submitList(tracks)
         if (tracks.isEmpty()) {
             onlineEmptyText.text = "No results for \"$query\""
-            onlineEmptyText.visibility = View.VISIBLE
+            onlineEmptyStateContainer.visibility = View.VISIBLE
             onlineRecyclerView.visibility = View.GONE
         } else {
-            onlineEmptyText.visibility = View.GONE
+            onlineEmptyStateContainer.visibility = View.GONE
             onlineRecyclerView.visibility = View.VISIBLE
         }
     }
@@ -601,7 +603,7 @@ class MainActivity : AppCompatActivity() {
     private fun showOnlineError(message: String) {
         onlineProgressBar.visibility = View.GONE
         onlineEmptyText.text = message
-        onlineEmptyText.visibility = View.VISIBLE
+        onlineEmptyStateContainer.visibility = View.VISIBLE
         onlineRecyclerView.visibility = View.GONE
     }
 
@@ -611,7 +613,7 @@ class MainActivity : AppCompatActivity() {
         onlineAdapter.submitList(emptyList())
         onlineProgressBar.visibility = View.GONE
         onlineEmptyText.text = "Search for songs to stream online"
-        onlineEmptyText.visibility = View.VISIBLE
+        onlineEmptyStateContainer.visibility = View.VISIBLE
         onlineRecyclerView.visibility = View.GONE
     }
 
