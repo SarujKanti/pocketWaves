@@ -241,18 +241,21 @@
     </androidx.cardview.widget.CardView>
 
     <!-- ══════════════════════════════════════
-         YouTube playback engine (audio-only usage: kept at 1x1dp and
-         always attached rather than shown full-size. Note this is
-         against YouTube's terms of service, which require the player
-         to stay visible during playback — accepted knowingly since
-         this app isn't distributed on the Play Store)
+         YouTube playback engine (audio-only usage). Kept at a normal,
+         functional size — WebViews can fail to load/render content in
+         a near-zero-size view — but translated off-screen in code so
+         nothing is visible. Note this is against YouTube's terms of
+         service, which require the player to stay visible during
+         playback — accepted knowingly since this app isn't
+         distributed on the Play Store.
          ══════════════════════════════════════ -->
     <com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
         android:id="@+id/youtubePlayerView"
-        android:layout_width="1dp"
-        android:layout_height="1dp"
-        android:layout_alignParentTop="true"
-        android:layout_alignParentStart="true" />
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_below="@id/modeTabLayout"
+        android:layout_marginLeft="16dp"
+        android:layout_marginRight="16dp" />
 
     <!-- ══════════════════════════════════════
          NOW PLAYING – visualizer
