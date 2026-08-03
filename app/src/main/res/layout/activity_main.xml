@@ -218,38 +218,6 @@
     </LinearLayout>
 
     <!-- ══════════════════════════════════════
-         YouTube playback engine (audio-only usage). Kept at real,
-         on-screen coordinates and a normal functional size — pushing
-         it off-screen (translationX/Y) made Chromium treat it as not
-         actually visible, which silently throttled/paused playback.
-         Instead it sits exactly behind youtubeCoverView below, which
-         stays permanently opaque and visible so nothing is ever seen.
-         Note this is against YouTube's terms of service, which
-         require the player to stay visible during playback —
-         accepted knowingly since this app isn't distributed on the
-         Play Store.
-         ══════════════════════════════════════ -->
-    <com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
-        android:id="@+id/youtubePlayerView"
-        android:layout_width="220dp"
-        android:layout_height="220dp"
-        android:layout_below="@id/modeTabLayout"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="24dp" />
-
-    <!-- Permanently visible opaque cover — always sits on top of
-         youtubePlayerView at identical bounds, regardless of which
-         tab/screen is showing, so the video is never exposed. -->
-    <View
-        android:id="@+id/youtubeCoverView"
-        android:layout_width="220dp"
-        android:layout_height="220dp"
-        android:layout_below="@id/modeTabLayout"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="24dp"
-        android:background="@color/bg_dark" />
-
-    <!-- ══════════════════════════════════════
          NOW PLAYING – album art card
          ══════════════════════════════════════ -->
     <androidx.cardview.widget.CardView
@@ -271,6 +239,25 @@
             android:src="@drawable/ic_launcher_background" />
 
     </androidx.cardview.widget.CardView>
+
+    <!-- ══════════════════════════════════════
+         NOW PLAYING – YouTube video player
+         (shown instead of the album art card for tracks sourced from
+         YouTube; YouTube's terms require its own player stay visible
+         during playback — a hidden/covered player was attempted but
+         is not reliable: WebView video content is hardware-composited
+         above normal view stacking order on Android and can bleed
+         through any view placed "on top" of it)
+         ══════════════════════════════════════ -->
+    <com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
+        android:id="@+id/youtubePlayerView"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_below="@id/modeTabLayout"
+        android:layout_marginLeft="16dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginRight="16dp"
+        android:visibility="gone" />
 
     <!-- ══════════════════════════════════════
          NOW PLAYING – visualizer
