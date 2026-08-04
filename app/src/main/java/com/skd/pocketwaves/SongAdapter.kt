@@ -65,7 +65,19 @@ class SongsAdapter(
             artistTextView.setTextColor(
                 ContextCompat.getColor(itemView.context, R.color.text_secondary)
             )
-            streamBadge.visibility = if (song.isOnline) View.VISIBLE else View.GONE
+            when {
+                song.isYoutube -> {
+                    streamBadge.visibility = View.VISIBLE
+                    streamBadge.setBackgroundResource(R.drawable.stream_badge_bg_youtube)
+                    streamBadge.setImageResource(R.drawable.ic_play_triangle)
+                }
+                song.isOnline -> {
+                    streamBadge.visibility = View.VISIBLE
+                    streamBadge.setBackgroundResource(R.drawable.stream_badge_bg)
+                    streamBadge.setImageResource(R.drawable.ic_cloud_stream)
+                }
+                else -> streamBadge.visibility = View.GONE
+            }
             Glide.with(itemView.context)
                 .load(song.albumArtUri)
                 .placeholder(R.drawable.audioicon)
