@@ -20,7 +20,9 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.MediaStore
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
+import android.webkit.WebView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
@@ -178,6 +180,10 @@ class MainActivity : AppCompatActivity() {
 
         youtubePlayerView = findViewById(R.id.youtubePlayerView)
         lifecycle.addObserver(youtubePlayerView)
+        // Some devices fail to hardware-composite the embedded video correctly
+        // (renders as a green checkerboard). Forcing the underlying WebView to
+        // render in software avoids that GPU/driver-level compositing bug.
+        forceSoftwareRendering(youtubePlayerView)
         youtubePlayerView.addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
             override fun onReady(youTubePlayer: YouTubePlayer) {
                 this@MainActivity.youTubePlayer = youTubePlayer
@@ -367,6 +373,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
         styleRecursively(sv)
+    }
+
+    // Forces any WebView inside the given view tree to render in software mode.
+    // Fixes a known class of GPU/driver bugs where hardware-composited video
+    // renders as a green checkerboard instead of the actual frame.
+    private fun forceSoftwareRendering(view: View) {
+        when (view) {
+            is WebView -> view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            is ViewGroup -> {
+                for (i in 0 until view.childCount) forceSoftwareRendering(view.getChildAt(i))
+            }
+        }
     }
 
     private fun togglePlaybackSafe() {
