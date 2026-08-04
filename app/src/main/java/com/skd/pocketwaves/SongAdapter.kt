@@ -53,6 +53,7 @@ class SongsAdapter(
         private val titleTextView: TextView = itemView.findViewById(R.id.titleTextView)
         private val artistTextView: TextView = itemView.findViewById(R.id.artistTextView)
         private val albumImageView: ImageView = itemView.findViewById(R.id.albumImageView)
+        private val streamBadge: ImageView = itemView.findViewById(R.id.streamBadge)
 
         fun bind(song: Song) {
             titleTextView.text = song.title
@@ -64,6 +65,19 @@ class SongsAdapter(
             artistTextView.setTextColor(
                 ContextCompat.getColor(itemView.context, R.color.text_secondary)
             )
+            when {
+                song.isYoutube -> {
+                    streamBadge.visibility = View.VISIBLE
+                    streamBadge.setBackgroundResource(R.drawable.stream_badge_bg_youtube)
+                    streamBadge.setImageResource(R.drawable.ic_play_triangle)
+                }
+                song.isOnline -> {
+                    streamBadge.visibility = View.VISIBLE
+                    streamBadge.setBackgroundResource(R.drawable.stream_badge_bg)
+                    streamBadge.setImageResource(R.drawable.ic_cloud_stream)
+                }
+                else -> streamBadge.visibility = View.GONE
+            }
             Glide.with(itemView.context)
                 .load(song.albumArtUri)
                 .placeholder(R.drawable.audioicon)

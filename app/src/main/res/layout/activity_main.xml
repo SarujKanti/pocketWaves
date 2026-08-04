@@ -61,13 +61,41 @@
         android:background="@color/divider" />
 
     <!-- ══════════════════════════════════════
+         OFFLINE / ONLINE MODE TABS
+         ══════════════════════════════════════ -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/modeTabLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/topDivider"
+        android:background="@color/bg_dark"
+        app:tabIndicatorColor="@color/accent"
+        app:tabIndicatorHeight="3dp"
+        app:tabSelectedTextColor="@color/text_primary"
+        app:tabTextColor="@color/text_secondary">
+
+        <com.google.android.material.tabs.TabItem
+            android:id="@+id/tabOffline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Offline" />
+
+        <com.google.android.material.tabs.TabItem
+            android:id="@+id/tabOnline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Online" />
+
+    </com.google.android.material.tabs.TabLayout>
+
+    <!-- ══════════════════════════════════════
          SEARCH BAR  (card + inner SearchView)
          ══════════════════════════════════════ -->
     <androidx.cardview.widget.CardView
         android:id="@+id/searchCard"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:layout_below="@id/topDivider"
+        android:layout_below="@id/modeTabLayout"
         android:layout_marginLeft="16dp"
         android:layout_marginTop="10dp"
         android:layout_marginRight="16dp"
@@ -102,13 +130,101 @@
         android:scrollbars="none" />
 
     <!-- ══════════════════════════════════════
+         ONLINE TAB  (search bar + results)
+         ══════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/onlineContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/controlPanel"
+        android:layout_below="@id/modeTabLayout"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginLeft="16dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginRight="16dp"
+            android:layout_marginBottom="4dp"
+            app:cardBackgroundColor="@color/surface"
+            app:cardCornerRadius="28dp"
+            app:cardElevation="4dp">
+
+            <SearchView
+                android:id="@+id/onlineSearchView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent"
+                android:iconifiedByDefault="false"
+                android:queryHint="Search songs online" />
+
+        </androidx.cardview.widget.CardView>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/onlineRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingTop="4dp"
+                android:paddingBottom="8dp"
+                android:scrollbars="none" />
+
+            <ProgressBar
+                android:id="@+id/onlineProgressBar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:indeterminateTint="@color/accent"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/onlineEmptyStateContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingLeft="32dp"
+                android:paddingRight="32dp">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:layout_marginBottom="12dp"
+                    android:alpha="0.5"
+                    android:src="@drawable/search_icon"
+                    app:tint="@color/text_secondary" />
+
+                <TextView
+                    android:id="@+id/onlineEmptyText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:text="Search for songs to stream online"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- ══════════════════════════════════════
          NOW PLAYING – album art card
          ══════════════════════════════════════ -->
     <androidx.cardview.widget.CardView
         android:id="@+id/Playing_Song_Cardview"
         android:layout_width="220dp"
         android:layout_height="220dp"
-        android:layout_below="@id/topDivider"
+        android:layout_below="@id/modeTabLayout"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="24dp"
         android:visibility="gone"
@@ -123,6 +239,25 @@
             android:src="@drawable/ic_launcher_background" />
 
     </androidx.cardview.widget.CardView>
+
+    <!-- ══════════════════════════════════════
+         NOW PLAYING – YouTube video player
+         (shown instead of the album art card for tracks sourced from
+         YouTube; YouTube's terms require its own player stay visible
+         during playback — a hidden/covered player was attempted but
+         is not reliable: WebView video content is hardware-composited
+         above normal view stacking order on Android and can bleed
+         through any view placed "on top" of it)
+         ══════════════════════════════════════ -->
+    <com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
+        android:id="@+id/youtubePlayerView"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_below="@id/modeTabLayout"
+        android:layout_marginLeft="16dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginRight="16dp"
+        android:visibility="gone" />
 
     <!-- ══════════════════════════════════════
          NOW PLAYING – visualizer

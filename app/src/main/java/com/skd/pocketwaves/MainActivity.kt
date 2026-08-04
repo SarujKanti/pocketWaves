@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.PorterDuff
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -19,10 +20,14 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.MediaStore
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
+import android.webkit.WebView
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.SearchView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -37,7 +42,16 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.google.android.material.tabs.TabLayout
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import java.lang.ref.WeakReference
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
@@ -52,6 +66,28 @@ class MainActivity : AppCompatActivity() {
     private lateinit var controlPanel: LinearLayout
     private lateinit var searchCard: CardView
     private lateinit var searchView: SearchView
+
+    private lateinit var modeTabLayout: TabLayout
+    private lateinit var onlineContainer: LinearLayout
+    private lateinit var onlineSearchView: SearchView
+    private lateinit var onlineRecyclerView: RecyclerView
+    private lateinit var onlineProgressBar: ProgressBar
+    private lateinit var onlineEmptyText: TextView
+    private lateinit var onlineEmptyStateContainer: View
+    private lateinit var onlineAdapter: SongsAdapter
+    private var onlineResults: List<Song> = emptyList()
+    private var isPlayingOnline = false
+    private var isOnlineTabSelected = false
+    private var searchDebounceRunnable: Runnable? = null
+
+    private lateinit var youtubePlayerView: YouTubePlayerView
+    private var youTubePlayer: YouTubePlayer? = null
+    private var isPlayingYoutube = false
+    private var isYoutubePlaying = false
+    private var currentPlayingSong: Song? = null
+    // Set when playSong() is called for a YouTube track before the player has
+    // finished its internal startup; loaded as soon as onReady() fires.
+    private var pendingYoutubeLoad: Pair<String, Float>? = null
 
     private lateinit var notificationManager: NotificationManagerCompat
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -75,6 +111,17 @@ class MainActivity : AppCompatActivity() {
         controlPanel    = findViewById(R.id.controlPanel)
         searchCard      = findViewById(R.id.searchCard)
         searchView      = findViewById(R.id.searchView)
+
+        modeTabLayout     = findViewById(R.id.modeTabLayout)
+        onlineContainer   = findViewById(R.id.onlineContainer)
+        onlineSearchView  = findViewById(R.id.onlineSearchView)
+        onlineRecyclerView = findViewById(R.id.onlineRecyclerView)
+        onlineProgressBar = findViewById(R.id.onlineProgressBar)
+        onlineEmptyText   = findViewById(R.id.onlineEmptyText)
+        onlineEmptyStateContainer = findViewById(R.id.onlineEmptyStateContainer)
+
+        styleSearchView(searchView)
+        styleSearchView(onlineSearchView)
         // Start the lifecycle service so onTaskRemoved() fires when user clears the app
         startService(Intent(this, AppLifecycleService::class.java))
 
@@ -93,8 +140,93 @@ class MainActivity : AppCompatActivity() {
         songsAdapter = SongsAdapter(emptyList()) { song -> playSong(song) }
         recyclerView.adapter = songsAdapter
 
+        onlineRecyclerView.layoutManager = LinearLayoutManager(this)
+        onlineAdapter = SongsAdapter(emptyList()) { song ->
+            isPlayingOnline = true
+            currentSongIndex = onlineResults.indexOf(song)
+            playSong(song)
+        }
+        onlineRecyclerView.adapter = onlineAdapter
+
+        modeTabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = switchTab(tab.position == 1)
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
+
+        onlineSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String): Boolean {
+                searchDebounceRunnable?.let { handler.removeCallbacks(it) }
+                if (query.isNotBlank()) searchOnlineTracks(query.trim())
+                onlineSearchView.clearFocus() // dismiss the keyboard so results/errors are visible
+                return true
+            }
+            override fun onQueryTextChange(newText: String): Boolean {
+                searchDebounceRunnable?.let { handler.removeCallbacks(it) }
+                val trimmed = newText.trim()
+                if (trimmed.length < 2) {
+                    if (trimmed.isEmpty()) resetOnlineResults()
+                    return true
+                }
+                val runnable = Runnable { searchOnlineTracks(trimmed) }
+                searchDebounceRunnable = runnable
+                handler.postDelayed(runnable, SEARCH_DEBOUNCE_MS)
+                return true
+            }
+        })
+
         seekBar = findViewById(R.id.seekBar)
         setupSeekBarListener()
+
+        youtubePlayerView = findViewById(R.id.youtubePlayerView)
+        lifecycle.addObserver(youtubePlayerView)
+        // Some devices fail to hardware-composite the embedded video correctly
+        // (renders as a green checkerboard). Forcing the underlying WebView to
+        // render in software avoids that GPU/driver-level compositing bug.
+        forceSoftwareRendering(youtubePlayerView)
+        youtubePlayerView.addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
+            override fun onReady(youTubePlayer: YouTubePlayer) {
+                this@MainActivity.youTubePlayer = youTubePlayer
+                pendingYoutubeLoad?.let { (videoId, startSeconds) ->
+                    youTubePlayer.loadVideo(videoId, startSeconds)
+                    pendingYoutubeLoad = null
+                }
+            }
+
+            override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
+                if (!isPlayingYoutube) return
+                when (state) {
+                    PlayerConstants.PlayerState.PLAYING -> {
+                        isYoutubePlaying = true
+                        findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.pause)
+                        currentPlayingSong?.let { showNotification(it, true) }
+                    }
+                    PlayerConstants.PlayerState.PAUSED -> {
+                        isYoutubePlaying = false
+                        findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.play)
+                        currentPlayingSong?.let { showNotification(it, false) }
+                    }
+                    PlayerConstants.PlayerState.ENDED -> {
+                        isYoutubePlaying = false
+                        playNextSong()
+                    }
+                    else -> {}
+                }
+            }
+
+            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
+                if (!isPlayingYoutube) return
+                val posMs = (second * 1000).toInt()
+                seekBar.progress = posMs
+                findViewById<TextView>(R.id.positive_playback_timer).text = formatTime(posMs)
+                findViewById<TextView>(R.id.negative_playback_timer).text =
+                    "-${formatTime((seekBar.max - posMs).coerceAtLeast(0))}"
+            }
+
+            override fun onVideoDuration(youTubePlayer: YouTubePlayer, duration: Float) {
+                seekBar.max = (duration * 1000).toInt()
+            }
+        })
 
         mediaPlayer = MediaPlayer().apply {
             setOnPreparedListener {
@@ -128,33 +260,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.reapet_button).setOnClickListener { toggleRepeat() }
 
         val playlistButton = findViewById<Button>(R.id.playlist_button)
-        val heading = findViewById<TextView>(R.id.heading)
 
-        playlistButton.setOnClickListener {
-            // Always close search bar and keyboard before switching view
-            if (searchCard.visibility == View.VISIBLE) {
-                searchCard.visibility = View.GONE
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(searchView.windowToken, 0)
-            }
-
-            if (isPlaylistVisible) {
-                playingCardView.visibility = View.VISIBLE
-                recyclerView.visibility = View.GONE
-                playlistButton.setBackgroundResource(R.drawable.playlist)
-                heading.text = "Now Playing"
-                visualizerView.visibility = if (currentSongIndex != -1) View.VISIBLE else View.GONE
-                if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
-            } else {
-                playingCardView.visibility = View.GONE
-                recyclerView.visibility = View.VISIBLE
-                playlistButton.setBackgroundResource(R.drawable.playing_button)
-                heading.text = "All Songs"
-                visualizerView.visibility = View.GONE
-                if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
-            }
-            isPlaylistVisible = !isPlaylistVisible
-        }
+        playlistButton.setOnClickListener { togglePlaylistView() }
 
         val searchButton = findViewById<Button>(R.id.search_button)
 
@@ -246,9 +353,48 @@ class MainActivity : AppCompatActivity() {
         ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
     }
 
+    // The framework SearchView renders its magnifier/close icons and input text in
+    // plain black by default, which clashes with the app's purple-accented theme.
+    // Its internal child IDs (search_mag_icon etc.) aren't part of the public SDK
+    // stubs on newer compileSdk versions, so restyle by walking the view tree instead.
+    private fun styleSearchView(sv: SearchView) {
+        fun styleRecursively(view: View) {
+            when (view) {
+                is EditText -> {
+                    view.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+                    view.setHintTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                }
+                is ImageView -> view.setColorFilter(
+                    ContextCompat.getColor(this, R.color.text_secondary), PorterDuff.Mode.SRC_IN
+                )
+                is android.view.ViewGroup -> {
+                    for (i in 0 until view.childCount) styleRecursively(view.getChildAt(i))
+                }
+            }
+        }
+        styleRecursively(sv)
+    }
+
+    // Forces any WebView inside the given view tree to render in software mode.
+    // Fixes a known class of GPU/driver bugs where hardware-composited video
+    // renders as a green checkerboard instead of the actual frame.
+    private fun forceSoftwareRendering(view: View) {
+        when (view) {
+            is WebView -> view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            is ViewGroup -> {
+                for (i in 0 until view.childCount) forceSoftwareRendering(view.getChildAt(i))
+            }
+        }
+    }
+
     private fun togglePlaybackSafe() {
         if (currentSongIndex == -1) {
-            if (songsAdapter.itemCount > 0) {
+            if (isOnlineTabSelected && onlineResults.isNotEmpty()) {
+                isPlayingOnline = true
+                currentSongIndex = 0
+                playSong(onlineResults[0])
+            } else if (!isOnlineTabSelected && songsAdapter.itemCount > 0) {
+                isPlayingOnline = false
                 currentSongIndex = 0
                 playSong(songsAdapter.getSongs()[0])
             } else {
@@ -257,6 +403,243 @@ class MainActivity : AppCompatActivity() {
             return
         }
         togglePlayback()
+    }
+
+    // Toggles between the current tab's song list and the "Now Playing" screen.
+    private fun togglePlaylistView() {
+        val listContainer: View = if (isOnlineTabSelected) onlineContainer else recyclerView
+        val listHeading = if (isOnlineTabSelected) "Online" else "All Songs"
+
+        if (searchCard.visibility == View.VISIBLE) {
+            searchCard.visibility = View.GONE
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(searchView.windowToken, 0)
+        }
+
+        val playlistButton = findViewById<Button>(R.id.playlist_button)
+        val heading = findViewById<TextView>(R.id.heading)
+
+        if (isPlaylistVisible) {
+            if (isPlayingYoutube) {
+                youtubePlayerView.visibility = View.VISIBLE
+                playingCardView.visibility = View.GONE
+            } else {
+                playingCardView.visibility = View.VISIBLE
+                youtubePlayerView.visibility = View.GONE
+            }
+            listContainer.visibility = View.GONE
+            playlistButton.setBackgroundResource(R.drawable.playlist)
+            heading.text = "Now Playing"
+            visualizerView.visibility = if (currentSongIndex != -1 && !isPlayingYoutube) View.VISIBLE else View.GONE
+        } else {
+            playingCardView.visibility = View.GONE
+            youtubePlayerView.visibility = View.GONE
+            listContainer.visibility = View.VISIBLE
+            playlistButton.setBackgroundResource(R.drawable.playing_button)
+            heading.text = listHeading
+            visualizerView.visibility = View.GONE
+        }
+        if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
+        isPlaylistVisible = !isPlaylistVisible
+    }
+
+    // Switches between the Offline (local library) and Online (Jamendo search) tabs.
+    private fun switchTab(online: Boolean) {
+        isOnlineTabSelected = online
+
+        if (searchCard.visibility == View.VISIBLE) {
+            searchCard.visibility = View.GONE
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(searchView.windowToken, 0)
+        }
+
+        val searchButton = findViewById<Button>(R.id.search_button)
+        val playlistButton = findViewById<Button>(R.id.playlist_button)
+        val heading = findViewById<TextView>(R.id.heading)
+
+        playingCardView.visibility = View.GONE
+        youtubePlayerView.visibility = View.GONE
+        visualizerView.visibility = View.GONE
+        isPlaylistVisible = true
+
+        if (online) {
+            recyclerView.visibility = View.GONE
+            onlineContainer.visibility = View.VISIBLE
+            searchButton.visibility = View.GONE
+            heading.text = "Online"
+        } else {
+            onlineContainer.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
+            searchButton.visibility = View.VISIBLE
+            heading.text = "All Songs"
+        }
+        playlistButton.setBackgroundResource(R.drawable.playing_button)
+        if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
+    }
+
+    private fun searchOnlineTracks(query: String) {
+        onlineProgressBar.visibility = View.VISIBLE
+        onlineEmptyStateContainer.visibility = View.GONE
+        onlineRecyclerView.visibility = View.GONE
+
+        // Jamendo (independent/CC full tracks) and YouTube (covers mainstream/
+        // commercial songs Jamendo can't legally offer) are searched in parallel
+        // and merged, YouTube first since it has far broader coverage.
+        var youtubeResult: List<Song>? = null
+        var jamendoResult: List<Song>? = null
+        var youtubeError: String? = null
+        var jamendoError: String? = null
+
+        fun tryFinish() {
+            val yt = youtubeResult ?: return
+            val jm = jamendoResult ?: return
+            val combined = yt + jm
+            when {
+                combined.isNotEmpty() -> showOnlineResults(combined, query)
+                youtubeError != null -> showOnlineError(youtubeError!!)
+                jamendoError != null -> showOnlineError(jamendoError!!)
+                else -> showOnlineResults(emptyList(), query)
+            }
+        }
+
+        fetchYoutubeTracks(query) { tracks, error ->
+            youtubeResult = tracks ?: emptyList()
+            youtubeError = error
+            tryFinish()
+        }
+        fetchJamendoCombined(query) { tracks, error ->
+            jamendoResult = tracks
+            jamendoError = error
+            tryFinish()
+        }
+    }
+
+    // Full-phrase Jamendo search, broadened to "any word" matching (merged, deduped)
+    // if the phrase itself matches nothing — Jamendo's search is an AND across terms.
+    private fun fetchJamendoCombined(query: String, callback: (List<Song>, String?) -> Unit) {
+        fetchJamendoTracks(query) { tracks, error ->
+            if (error != null) {
+                callback(emptyList(), error)
+                return@fetchJamendoTracks
+            }
+            if (tracks!!.isNotEmpty()) {
+                callback(tracks, null)
+                return@fetchJamendoTracks
+            }
+            val words = query.trim().split(Regex("\\s+")).filter { it.length >= 2 }.distinct()
+            if (words.size <= 1) {
+                callback(emptyList(), null)
+                return@fetchJamendoTracks
+            }
+            fetchMergedByWords(words, callback)
+        }
+    }
+
+    // Searches each word separately and merges the union of matches (deduped by track id).
+    private fun fetchMergedByWords(words: List<String>, callback: (List<Song>, String?) -> Unit) {
+        val merged = LinkedHashMap<Long, Song>()
+        var remaining = words.size
+        var lastError: String? = null
+
+        words.forEach { word ->
+            fetchJamendoTracks(word) { tracks, error ->
+                remaining--
+                if (error != null) lastError = error
+                tracks?.forEach { merged.putIfAbsent(it.id, it) }
+                if (remaining == 0) {
+                    callback(merged.values.toList(), if (merged.isEmpty()) lastError else null)
+                }
+            }
+        }
+    }
+
+    private fun fetchYoutubeTracks(query: String, callback: (List<Song>?, String?) -> Unit) {
+        val apiKey = BuildConfig.YOUTUBE_API_KEY
+        if (apiKey.isBlank()) {
+            callback(emptyList(), null) // not configured — skip silently, Jamendo still works
+            return
+        }
+        YoutubeClient.api.searchVideos(apiKey, query)
+            .enqueue(object : Callback<YoutubeSearchResponse> {
+                override fun onResponse(
+                    call: Call<YoutubeSearchResponse>,
+                    response: Response<YoutubeSearchResponse>
+                ) {
+                    if (isFinishing || isDestroyed) return
+                    if (!response.isSuccessful) {
+                        callback(null, "YouTube search failed (HTTP ${response.code()}). Check your API key/quota.")
+                        return
+                    }
+                    val songs = response.body()?.items.orEmpty().mapNotNull { it.toSong() }
+                    callback(songs, null)
+                }
+
+                override fun onFailure(call: Call<YoutubeSearchResponse>, t: Throwable) {
+                    if (isFinishing || isDestroyed) return
+                    callback(null, "Couldn't reach YouTube. Check your connection.")
+                }
+            })
+    }
+
+    private fun fetchJamendoTracks(term: String, callback: (List<Song>?, String?) -> Unit) {
+        JamendoClient.api.searchTracks(BuildConfig.JAMENDO_CLIENT_ID, term)
+            .enqueue(object : Callback<JamendoSearchResponse> {
+                override fun onResponse(
+                    call: Call<JamendoSearchResponse>,
+                    response: Response<JamendoSearchResponse>
+                ) {
+                    if (isFinishing || isDestroyed) return
+                    val payload = response.body()
+                    if (!response.isSuccessful || payload == null) {
+                        callback(null, "Search failed (HTTP ${response.code()}).")
+                        return
+                    }
+                    if (payload.headers.status == "failed") {
+                        callback(
+                            null,
+                            "Jamendo: ${payload.headers.error_message}. Add a free client ID to local.properties (JAMENDO_CLIENT_ID)."
+                        )
+                        return
+                    }
+                    callback(payload.results.map { it.toSong() }, null)
+                }
+
+                override fun onFailure(call: Call<JamendoSearchResponse>, t: Throwable) {
+                    if (isFinishing || isDestroyed) return
+                    callback(null, "Couldn't reach Jamendo. Check your connection.")
+                }
+            })
+    }
+
+    private fun showOnlineResults(tracks: List<Song>, query: String) {
+        onlineProgressBar.visibility = View.GONE
+        onlineResults = tracks
+        onlineAdapter.submitList(tracks)
+        if (tracks.isEmpty()) {
+            onlineEmptyText.text = "No results for \"$query\""
+            onlineEmptyStateContainer.visibility = View.VISIBLE
+            onlineRecyclerView.visibility = View.GONE
+        } else {
+            onlineEmptyStateContainer.visibility = View.GONE
+            onlineRecyclerView.visibility = View.VISIBLE
+        }
+    }
+
+    private fun showOnlineError(message: String) {
+        onlineProgressBar.visibility = View.GONE
+        onlineEmptyText.text = message
+        onlineEmptyStateContainer.visibility = View.VISIBLE
+        onlineRecyclerView.visibility = View.GONE
+    }
+
+    // Clears search results back to the initial prompt when the search box is emptied.
+    private fun resetOnlineResults() {
+        onlineResults = emptyList()
+        onlineAdapter.submitList(emptyList())
+        onlineProgressBar.visibility = View.GONE
+        onlineEmptyText.text = "Search for songs to stream online"
+        onlineEmptyStateContainer.visibility = View.VISIBLE
+        onlineRecyclerView.visibility = View.GONE
     }
 
     private fun setupVisualizer() {
@@ -318,6 +701,7 @@ class MainActivity : AppCompatActivity() {
         }
         songsList.reverse()
         songsAdapter = SongsAdapter(songsList) { song ->
+            isPlayingOnline = false
             currentSongIndex = songsList.indexOf(song)
             playSong(song)
         }
@@ -329,6 +713,7 @@ class MainActivity : AppCompatActivity() {
         isShuffleOn = !isShuffleOn
         val btn = findViewById<Button>(R.id.shuffleButton)
         btn.setBackgroundResource(if (isShuffleOn) R.drawable.shuffle_on else R.drawable.shuffle_off)
+        if (isPlayingOnline) return
         if (isShuffleOn) songsAdapter.shuffleSongs() else loadSongs()
     }
 
@@ -348,6 +733,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun playNextSong() {
+        if (isPlayingOnline) {
+            if (onlineResults.isEmpty()) return
+            when {
+                isShuffleOn -> {
+                    currentSongIndex = onlineResults.indices.random()
+                    playSong(onlineResults[currentSongIndex])
+                }
+                isRepeatOneOn -> playSong(onlineResults[currentSongIndex])
+                currentSongIndex < onlineResults.size - 1 -> {
+                    playSong(onlineResults[++currentSongIndex])
+                }
+                isRepeatAllOn -> {
+                    currentSongIndex = 0
+                    playSong(onlineResults[currentSongIndex])
+                }
+                else -> {
+                    currentSongIndex = -1
+                    if (isPlayingYoutube) youTubePlayer?.pause() else mediaPlayer.stop()
+                    findViewById<Button>(R.id.pauseResumeButton).setBackgroundResource(R.drawable.play)
+                }
+            }
+            return
+        }
         if (songsAdapter.itemCount == 0) return
         when {
             isShuffleOn -> {
@@ -371,6 +779,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun playPreviousSong() {
+        if (isPlayingOnline) {
+            if (onlineResults.isEmpty()) return
+            if (currentSongIndex - 1 >= 0) {
+                playSong(onlineResults[--currentSongIndex])
+            } else if (isRepeatAllOn) {
+                currentSongIndex = onlineResults.size - 1
+                playSong(onlineResults[currentSongIndex])
+            }
+            return
+        }
         if (songsAdapter.itemCount == 0) return
         if (currentSongIndex - 1 >= 0) {
             playSong(songsAdapter.getSongs()[--currentSongIndex])
@@ -386,48 +804,91 @@ class MainActivity : AppCompatActivity() {
         val artistView = findViewById<TextView>(R.id.song_artist)
         val heading = findViewById<TextView>(R.id.heading)
         val playlistBtn = findViewById<Button>(R.id.playlist_button)
+        val titleView = findViewById<TextView>(R.id.song_title)
 
         try {
-            songsAdapter.getSongs().forEach { it.isPlaying = false }
-            val index = songsAdapter.getSongs().indexOf(song)
+            val activeAdapter = if (song.isOnline) onlineAdapter else songsAdapter
+            activeAdapter.getSongs().forEach { it.isPlaying = false }
+            val index = activeAdapter.getSongs().indexOf(song)
             if (index != -1) {
-                songsAdapter.getSongs()[index].isPlaying = true
-                songsAdapter.notifyDataSetChanged()
+                activeAdapter.getSongs()[index].isPlaying = true
+                activeAdapter.notifyDataSetChanged()
             }
 
-            mediaPlayer.reset()
-            val songUri = ContentUris.withAppendedId(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.id
-            )
-            mediaPlayer.setDataSource(applicationContext, songUri)
-            mediaPlayer.prepareAsync()
+            currentPlayingSong = song
+            isPlayingYoutube = song.isYoutube
 
-            mediaPlayer.setOnPreparedListener {
-                it.start()
-                seekBar.max = it.duration
-                updateSeekBar()
-                setupVisualizer()
+            titleView.text = song.title
+            titleView.isSelected = true  // enables marquee scrolling
+            titleView.setOnClickListener {
+                if (song.isOnline) onlineRecyclerView.smoothScrollToPosition(index)
+                else recyclerView.smoothScrollToPosition(index)
+            }
+            artistView.text = song.artist
 
-                val titleView = findViewById<TextView>(R.id.song_title)
-                titleView.text = song.title
-                titleView.isSelected = true  // enables marquee scrolling
-                titleView.setOnClickListener { recyclerView.smoothScrollToPosition(index) }
-
-                pauseBtn.setBackgroundResource(R.drawable.pause)
-                albumImageView.setImageURI(Uri.parse(song.albumArtUri))
-                if (albumImageView.drawable == null) {
-                    albumImageView.setImageResource(R.drawable.audioicon)
+            if (song.isYoutube) {
+                mediaPlayer.reset() // stop any local/Jamendo audio playback
+                youtubePlayerView.visibility = View.VISIBLE
+                playingCardView.visibility = View.GONE
+                visualizerView.visibility = View.GONE // no audio-session access into the YouTube engine
+                val player = youTubePlayer
+                if (player != null) {
+                    player.loadVideo(song.youtubeVideoId, 0f)
+                } else {
+                    // Player hasn't finished starting up yet — queue it, onReady() picks it up.
+                    pendingYoutubeLoad = song.youtubeVideoId to 0f
                 }
-                artistView.text = song.artist
-            }
+                pauseBtn.setBackgroundResource(R.drawable.pause)
+            } else {
+                youTubePlayer?.pause() // stop any previously loaded YouTube video
+                pendingYoutubeLoad = null
+                youtubePlayerView.visibility = View.GONE
+                playingCardView.visibility = View.VISIBLE
 
-            mediaPlayer.setOnCompletionListener { playNextSong() }
+                if (song.isOnline) {
+                    Glide.with(this@MainActivity)
+                        .load(song.albumArtUri)
+                        .placeholder(R.drawable.audioicon)
+                        .error(R.drawable.audioicon)
+                        .into(albumImageView)
+                } else {
+                    albumImageView.setImageURI(Uri.parse(song.albumArtUri))
+                    if (albumImageView.drawable == null) {
+                        albumImageView.setImageResource(R.drawable.audioicon)
+                    }
+                }
+
+                mediaPlayer.reset()
+                if (song.isOnline) {
+                    mediaPlayer.setDataSource(song.streamUrl)
+                } else {
+                    val songUri = ContentUris.withAppendedId(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.id
+                    )
+                    mediaPlayer.setDataSource(applicationContext, songUri)
+                }
+                mediaPlayer.prepareAsync()
+
+                mediaPlayer.setOnPreparedListener {
+                    it.start()
+                    seekBar.max = it.duration
+                    updateSeekBar()
+                    setupVisualizer()
+                    pauseBtn.setBackgroundResource(R.drawable.pause)
+                }
+
+                mediaPlayer.setOnCompletionListener { playNextSong() }
+                visualizerView.visibility = View.VISIBLE
+            }
 
             showNotification(song, true)
-            if (index != -1) recyclerView.smoothScrollToPosition(index)
-            visualizerView.visibility = View.VISIBLE
+            if (index != -1) {
+                if (song.isOnline) onlineRecyclerView.smoothScrollToPosition(index)
+                else recyclerView.smoothScrollToPosition(index)
+            }
             playingCardView.visibility = View.VISIBLE
             recyclerView.visibility = View.GONE
+            onlineContainer.visibility = View.GONE
             heading.text = "Now Playing"
             playlistBtn.setBackgroundResource(R.drawable.playlist)
             isPlaylistVisible = false   // keep flag in sync with actual UI state
@@ -446,6 +907,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun togglePlayback() {
+        if (isPlayingYoutube) {
+            // Icon + notification update via the onStateChange listener once the
+            // player actually transitions, since that's the source of truth.
+            if (isYoutubePlaying) youTubePlayer?.pause() else youTubePlayer?.play()
+            return
+        }
         val pauseBtn = findViewById<Button>(R.id.pauseResumeButton)
         if (mediaPlayer.isPlaying) {
             mediaPlayer.pause()
@@ -458,9 +925,7 @@ class MainActivity : AppCompatActivity() {
             updateSeekBar()
         }
         // Update notification to reflect new play/pause state
-        if (currentSongIndex != -1) {
-            showNotification(songsAdapter.getSongs()[currentSongIndex], mediaPlayer.isPlaying)
-        }
+        currentPlayingSong?.let { showNotification(it, mediaPlayer.isPlaying) }
     }
 
     private fun updateSeekBar() {
@@ -477,7 +942,9 @@ class MainActivity : AppCompatActivity() {
     private fun setupSeekBarListener() {
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) mediaPlayer.seekTo(progress)
+                if (!fromUser) return
+                if (isPlayingYoutube) youTubePlayer?.seekTo(progress / 1000f)
+                else mediaPlayer.seekTo(progress)
             }
             override fun onStartTrackingTouch(sb: SeekBar?) { isUserSeeking = true }
             override fun onStopTrackingTouch(sb: SeekBar?) { isUserSeeking = false }
@@ -500,8 +967,10 @@ class MainActivity : AppCompatActivity() {
         ) return
 
         // Load album art bitmap (null → system uses small icon only)
+        // Online tracks use an http(s) album art URL, which contentResolver can't open directly.
         val albumBitmap = try {
-            contentResolver.openInputStream(Uri.parse(song.albumArtUri))?.use {
+            if (song.isOnline) null
+            else contentResolver.openInputStream(Uri.parse(song.albumArtUri))?.use {
                 BitmapFactory.decodeStream(it)
             }
         } catch (e: Exception) { null }
@@ -556,6 +1025,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        handler.removeCallbacksAndMessages(null)
         mediaPlayer.release()
         notificationManager.cancel(NOTIFICATION_ID)
         visualizerView.releaseVisualizer()
@@ -597,6 +1067,7 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_PREVIOUS = "com.skd.audioplayer.ACTION_PLAY_PREVIOUS"
         const val ACTION_NEXT    = "com.skd.audioplayer.ACTION_PLAY_NEXT"
         const val NOTIFICATION_ID = 1
+        private const val SEARCH_DEBOUNCE_MS = 450L
         var instance: WeakReference<MainActivity>? = null
     }
 }
