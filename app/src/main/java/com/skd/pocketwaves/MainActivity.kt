@@ -76,6 +76,12 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
         instance = WeakReference(this)
+        // Offers new Play Store versions to the user (no-op for non-Play installs).
+        InAppUpdateManager(
+            activity = this,
+            snackbarRoot = { findViewById(R.id.rootLayout) },
+            snackbarAnchor = { controlPanel }
+        )
         playingCardView = findViewById(R.id.Playing_Song_Cardview)
         controlPanel    = findViewById(R.id.controlPanel)
         searchCard      = findViewById(R.id.searchCard)
