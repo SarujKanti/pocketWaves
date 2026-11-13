@@ -5,33 +5,48 @@
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark"
+    android:background="@drawable/bg_root_gradient"
     android:fitsSystemWindows="true"
     tools:context=".MainActivity">
 
     <!-- ══════════════════════════════════════
-         TOP BAR  (paddingTop set in code via WindowInsets)
+         TOP BAR  (title + subtitle on the left, actions on the right)
          ══════════════════════════════════════ -->
     <RelativeLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingLeft="20dp"
-        android:paddingTop="12dp"
-        android:paddingRight="12dp"
-        android:paddingBottom="8dp"
-        android:background="@color/bg_dark">
+        android:paddingLeft="22dp"
+        android:paddingTop="16dp"
+        android:paddingRight="14dp"
+        android:paddingBottom="12dp">
 
-        <TextView
-            android:id="@+id/heading"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_centerVertical="true"
-            android:fontFamily="sans-serif-medium"
-            android:text="All Songs"
-            android:textColor="@color/text_primary"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/heading"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/inter_700"
+                android:text="All Songs"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp" />
+
+            <TextView
+                android:id="@+id/subHeading"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:fontFamily="@font/inter_500"
+                android:text=""
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+        </LinearLayout>
 
         <Button
             android:id="@+id/search_button"
@@ -39,6 +54,7 @@
             android:layout_height="36dp"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
+            android:layout_marginStart="6dp"
             android:background="@drawable/search_icon" />
 
         <Button
@@ -46,19 +62,19 @@
             android:layout_width="38dp"
             android:layout_height="38dp"
             android:layout_centerVertical="true"
-            android:layout_marginEnd="10dp"
+            android:layout_marginEnd="14dp"
             android:layout_toStartOf="@id/search_button"
             android:background="@drawable/playlist" />
 
     </RelativeLayout>
 
-    <!-- Thin divider under top bar -->
+    <!-- Spacer under top bar (kept as an anchor for layouts below it) -->
     <View
         android:id="@+id/topDivider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_below="@id/topBar"
-        android:background="@color/divider" />
+        android:background="@android:color/transparent" />
 
     <!-- ══════════════════════════════════════
          SEARCH BAR  (card + inner SearchView)
@@ -66,16 +82,16 @@
     <androidx.cardview.widget.CardView
         android:id="@+id/searchCard"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="54dp"
         android:layout_below="@id/topDivider"
-        android:layout_marginLeft="16dp"
-        android:layout_marginTop="10dp"
-        android:layout_marginRight="16dp"
-        android:layout_marginBottom="4dp"
+        android:layout_marginLeft="18dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginRight="18dp"
+        android:layout_marginBottom="8dp"
         android:visibility="gone"
         app:cardBackgroundColor="@color/surface"
-        app:cardCornerRadius="28dp"
-        app:cardElevation="4dp">
+        app:cardCornerRadius="27dp"
+        app:cardElevation="3dp">
 
         <SearchView
             android:id="@+id/searchView"
@@ -83,7 +99,7 @@
             android:layout_height="match_parent"
             android:background="@android:color/transparent"
             android:iconifiedByDefault="false"
-            android:queryHint="Search audio file" />
+            android:queryHint="Search songs or artists" />
 
     </androidx.cardview.widget.CardView>
 
@@ -98,7 +114,7 @@
         android:layout_below="@id/searchCard"
         android:clipToPadding="false"
         android:paddingTop="4dp"
-        android:paddingBottom="8dp"
+        android:paddingBottom="16dp"
         android:scrollbars="none" />
 
     <!-- ══════════════════════════════════════
@@ -106,14 +122,15 @@
          ══════════════════════════════════════ -->
     <androidx.cardview.widget.CardView
         android:id="@+id/Playing_Song_Cardview"
-        android:layout_width="220dp"
-        android:layout_height="220dp"
+        android:layout_width="250dp"
+        android:layout_height="250dp"
         android:layout_below="@id/topDivider"
         android:layout_centerHorizontal="true"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="20dp"
         android:visibility="gone"
-        app:cardCornerRadius="20dp"
-        app:cardElevation="20dp">
+        app:cardBackgroundColor="@color/surface"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="16dp">
 
         <ImageView
             android:id="@+id/Playing_Song_Imageview"
@@ -130,34 +147,41 @@
     <com.skd.pocketwaves.CustomVisualizerView
         android:id="@+id/visualizerView"
         android:layout_width="match_parent"
-        android:layout_height="80dp"
+        android:layout_height="72dp"
         android:layout_above="@id/controlPanel"
         android:layout_below="@id/Playing_Song_Cardview"
         android:layout_centerHorizontal="true"
-        android:layout_marginLeft="8dp"
-        android:layout_marginTop="12dp"
-        android:layout_marginRight="8dp"
-        android:layout_marginBottom="4dp"
-        android:background="@color/bg_dark"
+        android:layout_marginLeft="22dp"
+        android:layout_marginTop="20dp"
+        android:layout_marginRight="22dp"
+        android:layout_marginBottom="8dp"
+        android:background="@android:color/transparent"
         android:visibility="gone" />
 
     <!-- ══════════════════════════════════════
-         CONTROL PANEL  (always at bottom;
-         paddingBottom set in code via WindowInsets)
+         CONTROL PANEL  (rounded bottom sheet look, always at bottom)
          ══════════════════════════════════════ -->
     <LinearLayout
         android:id="@+id/controlPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:background="@color/surface"
-        android:elevation="8dp"
+        android:background="@drawable/bg_control_panel"
+        android:elevation="16dp"
         android:orientation="vertical"
-        android:paddingLeft="20dp"
-        android:paddingTop="14dp"
-        android:paddingRight="20dp"
-        android:paddingBottom="20dp"
+        android:paddingLeft="24dp"
+        android:paddingTop="10dp"
+        android:paddingRight="24dp"
+        android:paddingBottom="22dp"
         android:visibility="gone">
+
+        <!-- Drag handle -->
+        <View
+            android:layout_width="40dp"
+            android:layout_height="5dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="14dp"
+            android:background="@drawable/bg_handle" />
 
         <!-- Song title -->
         <TextView
@@ -165,31 +189,29 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="marquee"
-            android:fontFamily="@font/inter_500"
+            android:fontFamily="@font/inter_700"
             android:marqueeRepeatLimit="marquee_forever"
             android:scrollHorizontally="true"
             android:singleLine="true"
             android:text="Song Title Here"
             android:textAlignment="center"
             android:textColor="@color/text_primary"
-            android:textSize="17sp"
-            android:textStyle="bold" />
+            android:textSize="19sp" />
 
         <!-- Artist name -->
         <TextView
             android:id="@+id/song_artist"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:layout_marginBottom="12dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="14dp"
             android:ellipsize="end"
+            android:fontFamily="@font/inter_500"
             android:singleLine="true"
-            android:fontFamily="@font/inter_400"
             android:text="Artist Name"
-            android:textStyle="bold"
             android:textAlignment="center"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            android:textSize="14sp" />
 
         <!-- Seek bar row -->
         <LinearLayout
@@ -200,31 +222,31 @@
 
             <TextView
                 android:id="@+id/positive_playback_timer"
-                android:layout_width="40dp"
+                android:layout_width="44dp"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/inter_500"
                 android:text="00:00"
-                android:textStyle="bold"
-                android:textColor="@color/black"
-                android:textSize="11sp" />
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
 
             <SeekBar
                 android:id="@+id/seekBar"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:progressBackgroundTint="@color/black"
+                android:progressBackgroundTint="@color/seek_track"
                 android:progressTint="@color/accent"
                 android:thumbTint="@color/accent" />
 
             <TextView
                 android:id="@+id/negative_playback_timer"
-                android:layout_width="40dp"
+                android:layout_width="44dp"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/inter_500"
                 android:text="-00:00"
-                android:textStyle="bold"
                 android:textAlignment="textEnd"
-                android:textColor="@color/black"
-                android:textSize="11sp" />
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
 
         </LinearLayout>
 
@@ -232,40 +254,52 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:gravity="center_horizontal"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
             android:orientation="horizontal">
 
             <!-- Repeat -->
             <Button
                 android:id="@+id/reapet_button"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:layout_gravity="center_vertical"
-                android:layout_marginEnd="18dp"
+                android:layout_marginEnd="20dp"
                 android:background="@drawable/repeat" />
 
             <!-- Previous -->
             <Button
                 android:id="@+id/previousButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_gravity="center_vertical"
                 android:layout_marginEnd="14dp"
                 android:background="@drawable/previous" />
 
-            <!-- Play / Pause  (slightly larger) -->
-            <Button
-                android:id="@+id/pauseResumeButton"
-                android:layout_width="62dp"
-                android:layout_height="62dp"
-                android:background="@drawable/play" />
+            <!-- Play / Pause inside a soft accent circle -->
+            <FrameLayout
+                android:layout_width="76dp"
+                android:layout_height="76dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_play_circle" />
+
+                <Button
+                    android:id="@+id/pauseResumeButton"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/play" />
+
+            </FrameLayout>
 
             <!-- Next -->
             <Button
                 android:id="@+id/nextButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_gravity="center_vertical"
                 android:layout_marginStart="14dp"
                 android:background="@drawable/next" />
@@ -273,10 +307,10 @@
             <!-- Shuffle -->
             <Button
                 android:id="@+id/shuffleButton"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:layout_gravity="center_vertical"
-                android:layout_marginStart="18dp"
+                android:layout_marginStart="20dp"
                 android:background="@drawable/shuffle_off" />
 
         </LinearLayout>
