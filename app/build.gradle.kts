@@ -50,4 +50,5 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.2.1")
     implementation("com.github.bumptech.glide:glide:4.12.0")
     implementation("androidx.media:media:1.4.0")
+    implementation("com.google.android.play:app-update:2.1.0")
 }
