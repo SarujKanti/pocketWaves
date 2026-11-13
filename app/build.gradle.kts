@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.skd.pocketwaves"
-        minSdk = 21
+        minSdk = 25
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 9
+        versionName = "1.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
