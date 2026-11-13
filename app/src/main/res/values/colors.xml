@@ -13,12 +13,15 @@
     <color name="textColor">#6C63FF</color>
     <color name="light">#9EA9C2</color>
 
-    <!-- Light mode adaptive colors -->
-    <color name="bg_dark">#F2F2F7</color>
+    <!-- Light mode adaptive colors (overridden in values-night) -->
+    <color name="bg_dark">#F6F6FA</color>
+    <color name="bg_glow">#2E6C63FF</color>
     <color name="bg_card">#FFFFFF</color>
     <color name="surface">#FFFFFF</color>
-    <color name="text_primary">#1C1C1E</color>
-    <color name="text_secondary">#8E8E93</color>
-    <color name="playing_bg">#EDE9FE</color>
-    <color name="divider">#E5E5EA</color>
+    <color name="text_primary">#16161D</color>
+    <color name="text_secondary">#7A7A8C</color>
+    <color name="playing_bg">#ECE9FF</color>
+    <color name="accent_soft">#EDEBFF</color>
+    <color name="seek_track">#DCDAEE</color>
+    <color name="divider">#E8E8F0</color>
 </resources>

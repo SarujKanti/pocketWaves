@@ -33,13 +33,12 @@ class SongsAdapter(
         holder.bind(song)
         holder.itemView.setOnClickListener { onItemClick(song) }
 
-        // Highlight currently playing song using theme-adaptive color
-        holder.itemView.setBackgroundColor(
-            if (song.isPlaying)
-                ContextCompat.getColor(holder.itemView.context, R.color.playing_bg)
-            else
-                Color.TRANSPARENT
-        )
+        // Highlight currently playing song with a rounded, theme-adaptive card
+        if (song.isPlaying) {
+            holder.itemView.setBackgroundResource(R.drawable.bg_song_item_playing)
+        } else {
+            holder.itemView.setBackgroundColor(Color.TRANSPARENT)
+        }
     }
 
     override fun getItemCount(): Int = songs.size
@@ -53,10 +52,12 @@ class SongsAdapter(
         private val titleTextView: TextView = itemView.findViewById(R.id.titleTextView)
         private val artistTextView: TextView = itemView.findViewById(R.id.artistTextView)
         private val albumImageView: ImageView = itemView.findViewById(R.id.albumImageView)
+        private val playingIndicator: ImageView = itemView.findViewById(R.id.playingIndicator)
 
         fun bind(song: Song) {
             titleTextView.text = song.title
             artistTextView.text = song.artist
+            playingIndicator.visibility = if (song.isPlaying) View.VISIBLE else View.GONE
             // Use theme-adaptive text colors from color resources
             titleTextView.setTextColor(
                 ContextCompat.getColor(itemView.context, R.color.text_primary)

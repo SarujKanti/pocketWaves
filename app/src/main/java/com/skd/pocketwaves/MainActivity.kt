@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.PorterDuff
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -19,8 +20,10 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.MediaStore
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SearchView
@@ -52,6 +55,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var controlPanel: LinearLayout
     private lateinit var searchCard: CardView
     private lateinit var searchView: SearchView
+    private lateinit var subHeading: TextView
+    private lateinit var nowPlayingEmpty: View
 
     private lateinit var notificationManager: NotificationManagerCompat
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -75,8 +80,9 @@ class MainActivity : AppCompatActivity() {
         controlPanel    = findViewById(R.id.controlPanel)
         searchCard      = findViewById(R.id.searchCard)
         searchView      = findViewById(R.id.searchView)
-        // Start the lifecycle service so onTaskRemoved() fires when user clears the app
-        startService(Intent(this, AppLifecycleService::class.java))
+        subHeading      = findViewById(R.id.subHeading)
+        nowPlayingEmpty = findViewById(R.id.nowPlayingEmpty)
+        styleSearchView(searchView)
 
         // fitsSystemWindows="true" on rootLayout handles all inset padding
         // automatically — no manual listener needed.
@@ -154,6 +160,7 @@ class MainActivity : AppCompatActivity() {
                 if (currentSongIndex != -1) controlPanel.visibility = View.VISIBLE
             }
             isPlaylistVisible = !isPlaylistVisible
+            updateSubHeading()
         }
 
         val searchButton = findViewById<Button>(R.id.search_button)
@@ -174,7 +181,10 @@ class MainActivity : AppCompatActivity() {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showSoftInput(searchView, InputMethodManager.SHOW_IMPLICIT)
             }
+            updateSubHeading()
         }
+
+        findViewById<Button>(R.id.browseButton).setOnClickListener { playlistButton.performClick() }
 
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String) = false
@@ -184,6 +194,7 @@ class MainActivity : AppCompatActivity() {
                             song.artist.contains(newText, ignoreCase = true)
                 }
                 songsAdapter.submitList(filtered)
+                updateSubHeading()
                 return true
             }
         })
@@ -202,6 +213,39 @@ class MainActivity : AppCompatActivity() {
                 moveTaskToBack(true)
             }
         })
+    }
+
+    // Subtitle under the heading: song count on the list, a short note on Now Playing.
+    private fun updateSubHeading() {
+        val n = songsAdapter.itemCount
+        subHeading.text = if (isPlaylistVisible) {
+            if (n == 1) "1 song" else "$n songs"
+        } else {
+            "From your library"
+        }
+        // "Nothing playing yet" prompt: only on the Now Playing screen (song list
+        // hidden), when no song has been picked.
+        nowPlayingEmpty.visibility =
+            if (!isPlaylistVisible && currentSongIndex == -1 && recyclerView.visibility != View.VISIBLE)
+                View.VISIBLE else View.GONE
+    }
+
+    // The framework SearchView draws black icons/text by default, which is
+    // unreadable in dark mode — recolor everything from the theme palette.
+    private fun styleSearchView(sv: SearchView) {
+        fun walk(view: View) {
+            when (view) {
+                is EditText -> {
+                    view.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+                    view.setHintTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                }
+                is ImageView -> view.setColorFilter(
+                    ContextCompat.getColor(this, R.color.text_secondary), PorterDuff.Mode.SRC_IN
+                )
+                is ViewGroup -> for (i in 0 until view.childCount) walk(view.getChildAt(i))
+            }
+        }
+        walk(sv)
     }
 
     private fun hasRequiredPermissions(): Boolean {
@@ -323,6 +367,7 @@ class MainActivity : AppCompatActivity() {
         }
         recyclerView.adapter = songsAdapter
         if (songsList.isNotEmpty()) recyclerView.scrollToPosition(0)
+        updateSubHeading()
     }
 
     private fun toggleShuffle() {
@@ -416,7 +461,7 @@ class MainActivity : AppCompatActivity() {
                 pauseBtn.setBackgroundResource(R.drawable.pause)
                 albumImageView.setImageURI(Uri.parse(song.albumArtUri))
                 if (albumImageView.drawable == null) {
-                    albumImageView.setImageResource(R.drawable.audioicon)
+                    albumImageView.setImageResource(R.drawable.bg_art_placeholder)
                 }
                 artistView.text = song.artist
             }
@@ -431,6 +476,7 @@ class MainActivity : AppCompatActivity() {
             heading.text = "Now Playing"
             playlistBtn.setBackgroundResource(R.drawable.playlist)
             isPlaylistVisible = false   // keep flag in sync with actual UI state
+            updateSubHeading()
             findViewById<CardView>(R.id.searchCard).visibility = View.GONE
             controlPanel.visibility = View.VISIBLE
 
@@ -550,13 +596,31 @@ class MainActivity : AppCompatActivity() {
             )
             .build()
 
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        // Host the notification in a foreground service so Android removes it
+        // automatically if the app is cleared/killed without any callback running.
+        val service = AppLifecycleService.instance
+        try {
+            if (service != null) {
+                service.show(notification)
+            } else {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, AppLifecycleService::class.java)
+                        .putExtra(AppLifecycleService.EXTRA_NOTIFICATION, notification)
+                )
+            }
+        } catch (e: Exception) {
+            // Foreground start can be refused (e.g. app restricted in background);
+            // fall back to a plain notification rather than losing it.
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         instance = null
         mediaPlayer.release()
+        AppLifecycleService.instance?.dismiss()
         notificationManager.cancel(NOTIFICATION_ID)
         visualizerView.releaseVisualizer()
         if (wakeLock.isHeld) wakeLock.release()

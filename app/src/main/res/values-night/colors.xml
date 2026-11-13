@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_dark">#0D0D12</color>
+    <color name="bg_glow">#476C63FF</color>
+    <color name="bg_card">#1A1A24</color>
+    <color name="surface">#1A1A24</color>
+    <color name="text_primary">#F2F2F8</color>
+    <color name="text_secondary">#9A9AAE</color>
+    <color name="playing_bg">#25214A</color>
+    <color name="accent_soft">#2A2650</color>
+    <color name="seek_track">#3A3A4C</color>
+    <color name="divider">#262633</color>
+</resources>
