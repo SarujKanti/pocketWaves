@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchCard: CardView
     private lateinit var searchView: SearchView
     private lateinit var subHeading: TextView
+    private lateinit var nowPlayingEmpty: View
 
     private lateinit var notificationManager: NotificationManagerCompat
     private lateinit var wakeLock: PowerManager.WakeLock
@@ -80,9 +81,8 @@ class MainActivity : AppCompatActivity() {
         searchCard      = findViewById(R.id.searchCard)
         searchView      = findViewById(R.id.searchView)
         subHeading      = findViewById(R.id.subHeading)
+        nowPlayingEmpty = findViewById(R.id.nowPlayingEmpty)
         styleSearchView(searchView)
-        // Start the lifecycle service so onTaskRemoved() fires when user clears the app
-        startService(Intent(this, AppLifecycleService::class.java))
 
         // fitsSystemWindows="true" on rootLayout handles all inset padding
         // automatically — no manual listener needed.
@@ -181,7 +181,10 @@ class MainActivity : AppCompatActivity() {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showSoftInput(searchView, InputMethodManager.SHOW_IMPLICIT)
             }
+            updateSubHeading()
         }
+
+        findViewById<Button>(R.id.browseButton).setOnClickListener { playlistButton.performClick() }
 
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String) = false
@@ -220,6 +223,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             "From your library"
         }
+        // "Nothing playing yet" prompt: only on the Now Playing screen (song list
+        // hidden), when no song has been picked.
+        nowPlayingEmpty.visibility =
+            if (!isPlaylistVisible && currentSongIndex == -1 && recyclerView.visibility != View.VISIBLE)
+                View.VISIBLE else View.GONE
     }
 
     // The framework SearchView draws black icons/text by default, which is
@@ -453,7 +461,7 @@ class MainActivity : AppCompatActivity() {
                 pauseBtn.setBackgroundResource(R.drawable.pause)
                 albumImageView.setImageURI(Uri.parse(song.albumArtUri))
                 if (albumImageView.drawable == null) {
-                    albumImageView.setImageResource(R.drawable.audioicon)
+                    albumImageView.setImageResource(R.drawable.bg_art_placeholder)
                 }
                 artistView.text = song.artist
             }
@@ -588,13 +596,31 @@ class MainActivity : AppCompatActivity() {
             )
             .build()
 
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        // Host the notification in a foreground service so Android removes it
+        // automatically if the app is cleared/killed without any callback running.
+        val service = AppLifecycleService.instance
+        try {
+            if (service != null) {
+                service.show(notification)
+            } else {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, AppLifecycleService::class.java)
+                        .putExtra(AppLifecycleService.EXTRA_NOTIFICATION, notification)
+                )
+            }
+        } catch (e: Exception) {
+            // Foreground start can be refused (e.g. app restricted in background);
+            // fall back to a plain notification rather than losing it.
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         instance = null
         mediaPlayer.release()
+        AppLifecycleService.instance?.dismiss()
         notificationManager.cancel(NOTIFICATION_ID)
         visualizerView.releaseVisualizer()
         if (wakeLock.isHeld) wakeLock.release()
