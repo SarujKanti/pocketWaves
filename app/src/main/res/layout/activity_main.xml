@@ -137,9 +137,54 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
-            android:src="@drawable/ic_launcher_background" />
+            android:src="@drawable/bg_art_placeholder" />
 
     </androidx.cardview.widget.CardView>
+
+    <!-- ══════════════════════════════════════
+         NOW PLAYING – empty state (nothing selected yet)
+         ══════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/nowPlayingEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/Playing_Song_Cardview"
+        android:layout_marginTop="32dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingLeft="32dp"
+        android:paddingRight="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/inter_700"
+            android:text="Nothing playing yet"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:fontFamily="@font/inter_400"
+            android:gravity="center"
+            android:text="Pick a song from your library to start listening."
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/browseButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:paddingLeft="28dp"
+            android:paddingRight="28dp"
+            android:text="Browse songs"
+            android:textAllCaps="false" />
+
+    </LinearLayout>
 
     <!-- ══════════════════════════════════════
          NOW PLAYING – visualizer
